@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "834314998816",
+    "project_id": "childscreeningsystems-561e0",
+    "storage_bucket": "childscreeningsystems-561e0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:834314998816:android:f28fee39f9830b2e17d845",
+        "android_client_info": {
+          "package_name": "com.example.web_page"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBVwVNKj2XVm28oo5m1Dl4VCcffs1TG7oE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
