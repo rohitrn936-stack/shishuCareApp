@@ -21,20 +21,67 @@ class _ScreeningPageState extends State<ScreeningPage> {
 
   late Future<DocumentSnapshot> childFuture;
 
+  List<ScreeningItem> ageBandItems = [];
+  List<ScreeningItem> universalItems = [];
+  String ageGroup = "";
+  bool itemsBuilt = false;
+
   @override
   void initState() {
     super.initState();
     childFuture = firestoreService.getChild(widget.childID);
   }
 
-  Future<void> _saveScreening(
-    String ageGroup,
-    List<ScreeningItem> items,
-  ) async {
+  void _buildItems(Map<String, dynamic> data) {
+    if (itemsBuilt) return;
+
+    final int years = data["ageYears"];
+    final int months = data["ageMonths"];
+
+    if (years == 0 && months < 2) {
+      ageGroup = "Birth - 6 Weeks";
+    } else if (years == 0 && months < 6) {
+      ageGroup = "6 Weeks - 6 Months";
+    } else if (years == 0) {
+      ageGroup = "6 - 12 Months";
+    } else if (years < 2) {
+      ageGroup = "1 - 2 Years";
+    } else if (years < 3) {
+      ageGroup = "2 - 3 Years";
+    } else {
+      ageGroup = "3 - 5 Years";
+    }
+
+    final checklist = screeningChecklists[ageGroup] ?? [];
+
+    ageBandItems = checklist.map((e) {
+      return ScreeningItem(
+        title: e["title"]!,
+        description: e["description"]!,
+        redFlagText: e["redFlag"]!,
+      );
+    }).toList();
+
+    universalItems = universalRedFlags.map((text) {
+      return ScreeningItem(
+        title: text,
+        isUniversal: true,
+      );
+    }).toList();
+
+    itemsBuilt = true;
+  }
+
+  int get _activeFlagCount =>
+      [...ageBandItems, ...universalItems].where((i) => i.redFlag).length;
+
+  Future<void> _saveScreening() async {
+    final allResults = [...ageBandItems, ...universalItems];
+
     await screeningService.saveScreening(
       childID: widget.childID,
       ageGroup: ageGroup,
-      results: items.map((e) => e.toJson()).toList(),
+      results: allResults.map((e) => e.toJson()).toList(),
     );
 
     if (!mounted) return;
@@ -55,6 +102,25 @@ class _ScreeningPageState extends State<ScreeningPage> {
         centerTitle: true,
         backgroundColor: Colors.deepPurple,
         foregroundColor: Colors.white,
+        actions: [
+          if (_activeFlagCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade700,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    "⚑ $_activeFlagCount flagged",
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
       body: FutureBuilder<DocumentSnapshot>(
         future: childFuture,
@@ -72,31 +138,10 @@ class _ScreeningPageState extends State<ScreeningPage> {
           }
 
           final data = snapshot.data!.data() as Map<String, dynamic>;
+          _buildItems(data);
 
           final int years = data["ageYears"];
           final int months = data["ageMonths"];
-
-          String ageGroup;
-
-          if (years == 0 && months < 2) {
-            ageGroup = "Birth - 6 Weeks";
-          } else if (years == 0 && months < 6) {
-            ageGroup = "6 Weeks - 6 Months";
-          } else if (years == 0) {
-            ageGroup = "6 - 12 Months";
-          } else if (years < 2) {
-            ageGroup = "1 - 2 Years";
-          } else if (years < 3) {
-            ageGroup = "2 - 3 Years";
-          } else {
-            ageGroup = "3 - 5 Years";
-          }
-
-          final checklist = screeningChecklists[ageGroup] ?? [];
-
-          final items = checklist.map((e) {
-            return ScreeningItem(title: e["title"]!);
-          }).toList();
 
           return Center(
             child: Container(
@@ -114,27 +159,15 @@ class _ScreeningPageState extends State<ScreeningPage> {
                     const Center(
                       child: Text(
                         "New Screening",
-                        style: TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
                       ),
                     ),
                     const SizedBox(height: 30),
-                    Text(
-                      "Child ID : ${data["childID"]}",
-                      style: const TextStyle(fontSize: 18),
-                    ),
+                    Text("Child ID : ${data["childID"]}", style: const TextStyle(fontSize: 18)),
                     const SizedBox(height: 8),
-                    Text(
-                      "Child Name : ${data["childName"]}",
-                      style: const TextStyle(fontSize: 18),
-                    ),
+                    Text("Child Name : ${data["childName"]}", style: const TextStyle(fontSize: 18)),
                     const SizedBox(height: 8),
-                    Text(
-                      "Age : $years Years $months Months",
-                      style: const TextStyle(fontSize: 18),
-                    ),
+                    Text("Age : $years Years $months Months", style: const TextStyle(fontSize: 18)),
                     const SizedBox(height: 25),
                     Center(
                       child: Text(
@@ -147,11 +180,32 @@ class _ScreeningPageState extends State<ScreeningPage> {
                       ),
                     ),
                     const SizedBox(height: 25),
-                    ...List.generate(
-                      checklist.length,
-                      (index) => ScreeningCard(
-                        item: items[index],
-                        description: checklist[index]["description"]!,
+                    ...ageBandItems.map(
+                      (item) => ScreeningCard(item: item, onChanged: () => setState(() {})),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.amber.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Universal Red Flags — refer regardless of age band",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.amber.shade900,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          ...universalItems.map(
+                            (item) => ScreeningCard(item: item, onChanged: () => setState(() {})),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 30),
@@ -159,7 +213,7 @@ class _ScreeningPageState extends State<ScreeningPage> {
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton.icon(
-                        onPressed: () => _saveScreening(ageGroup, items),
+                        onPressed: _saveScreening,
                         icon: const Icon(Icons.save),
                         label: const Text("Save Screening"),
                       ),

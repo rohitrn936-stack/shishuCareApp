@@ -23,6 +23,8 @@ class ScreeningReportPage extends StatelessWidget {
 
     final DateTime date = timestamp?.toDate() ?? DateTime.now();
 
+    final int redFlagCount = data["redFlagCount"] ?? 0;
+
     return Scaffold(
       backgroundColor: Colors.deepPurple.shade50,
 
@@ -30,6 +32,25 @@ class ScreeningReportPage extends StatelessWidget {
         title: const Text("Screening Report"),
         backgroundColor: Colors.deepPurple,
         foregroundColor: Colors.white,
+        actions: [
+          if (redFlagCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade700,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    "⚑ $redFlagCount flagged",
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
 
       body: Center(
@@ -102,6 +123,11 @@ class ScreeningReportPage extends StatelessWidget {
 
                 const SizedBox(height: 30),
                 ...results.map((item) {
+                  final bool isChecked = item["checked"] == true;
+                  final bool isFlagged = item["redFlag"] == true;
+                  final String redFlagText = (item["redFlagText"] ?? "").toString();
+                  final bool isUniversal = item["isUniversal"] == true;
+
                   return Card(
                     margin: const EdgeInsets.only(bottom: 20),
 
@@ -122,60 +148,62 @@ class ScreeningReportPage extends StatelessWidget {
 
                           const SizedBox(height: 15),
 
-                          Row(
-                            children: [
-                              Icon(
-                                item["checked"]
-                                    ? Icons.check_circle
-                                    : Icons.cancel,
-                                color: item["checked"]
-                                    ? Colors.green
-                                    : Colors.grey,
-                              ),
+                          if (!isUniversal)
+                            Row(
+                              children: [
+                                Icon(
+                                  isChecked ? Icons.check_circle : Icons.cancel,
+                                  color: isChecked ? Colors.green : Colors.grey,
+                                ),
 
-                              const SizedBox(width: 10),
+                                const SizedBox(width: 10),
 
-                              Text(
-                                item["checked"] ? "Completed" : "Not Completed",
-                              ),
-                            ],
-                          ),
+                                Text(isChecked ? "Completed" : "Not Completed"),
+                              ],
+                            ),
 
                           const SizedBox(height: 10),
 
                           Row(
                             children: [
                               Icon(
-                                item["redFlag"]
-                                    ? Icons.flag
-                                    : Icons.flag_outlined,
-                                color: item["redFlag"]
-                                    ? Colors.red
-                                    : Colors.grey,
+                                isFlagged ? Icons.flag : Icons.flag_outlined,
+                                color: isFlagged ? Colors.red : Colors.grey,
                               ),
 
                               const SizedBox(width: 10),
 
-                              Text(
-                                item["redFlag"] ? "Red Flag" : "No Red Flag",
-                              ),
+                              Text(isFlagged ? "Red Flag" : "No Red Flag"),
                             ],
                           ),
 
-                          const SizedBox(height: 20),
+                          if (isFlagged && redFlagText.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              redFlagText,
+                              style: const TextStyle(
+                                color: Colors.red,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
 
-                          const Text(
-                            "Notes",
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
+                          if (!isUniversal) ...[
+                            const SizedBox(height: 20),
 
-                          const SizedBox(height: 5),
+                            const Text(
+                              "Notes",
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
 
-                          Text(
-                            item["notes"].toString().isEmpty
-                                ? "-"
-                                : item["notes"],
-                          ),
+                            const SizedBox(height: 5),
+
+                            Text(
+                              item["notes"].toString().isEmpty
+                                  ? "-"
+                                  : item["notes"],
+                            ),
+                          ],
                         ],
                       ),
                     ),

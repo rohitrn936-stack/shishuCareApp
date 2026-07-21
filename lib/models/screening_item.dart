@@ -1,31 +1,30 @@
 class ScreeningItem {
-  String title;
+  final String title;
+  final String description;
+  final String redFlagText;
+  final bool isUniversal;
+
   bool checked;
   bool redFlag;
   String notes;
 
   ScreeningItem({
     required this.title,
+    this.description = "",
+    this.redFlagText = "",
+    this.isUniversal = false,
     this.checked = false,
     this.redFlag = false,
     this.notes = "",
   });
 
-  Map<String, dynamic> toJson() {
-    return {
-      "title": title,
-      "checked": checked,
-      "redFlag": redFlag,
-      "notes": notes,
-    };
-  }
-
-  factory ScreeningItem.fromJson(Map<String, dynamic> json) {
-    return ScreeningItem(
-      title: json["title"],
-      checked: json["checked"] ?? false,
-      redFlag: json["redFlag"] ?? false,
-      notes: json["notes"] ?? "",
-    );
-  }
+  Map<String, dynamic> toJson() => {
+    "title": title,
+    "description": description,
+    "redFlagText": redFlagText,
+    "isUniversal": isUniversal,
+    "checked": checked,
+    "redFlag": redFlag,
+    "notes": notes,
+  };
 }
