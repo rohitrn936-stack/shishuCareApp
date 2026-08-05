@@ -113,7 +113,7 @@ class ScreeningReportPage extends StatelessWidget {
                         date: "${date.day}/${date.month}/${date.year}",
                         results: results,
                       );
-
+                      
                       await Printing.layoutPdf(
                         onLayout: (format) async => pdf.save(),
                       );
