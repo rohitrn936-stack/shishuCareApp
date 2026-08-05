@@ -3,12 +3,12 @@ import 'package:web_page/models/screening_item.dart';
 
 class ScreeningCard extends StatefulWidget {
   final ScreeningItem item;
-  final String description;
+  final VoidCallback onChanged;
 
   const ScreeningCard({
     super.key,
     required this.item,
-    required this.description,
+    required this.onChanged,
   });
 
   @override
@@ -16,258 +16,283 @@ class ScreeningCard extends StatefulWidget {
 }
 
 class _ScreeningCardState extends State<ScreeningCard> {
-  late TextEditingController notesController;
+  late final TextEditingController _valueController;
+  late final TextEditingController _notesController;
 
   @override
   void initState() {
     super.initState();
-    notesController = TextEditingController(text: widget.item.notes);
+    _valueController = TextEditingController(text: widget.item.value);
+    _notesController = TextEditingController(text: widget.item.notes);
+  }
 
-    notesController.addListener(() {
-      widget.item.notes = notesController.text;
-    });
+  @override
+  void didUpdateWidget(covariant ScreeningCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.item != widget.item) {
+      _valueController.text = widget.item.value;
+      _notesController.text = widget.item.notes;
+    }
   }
 
   @override
   void dispose() {
-    notesController.dispose();
+    _valueController.dispose();
+    _notesController.dispose();
     super.dispose();
+  }
+
+  IconData _iconFor(String title) {
+    final t = title.toLowerCase();
+
+    if (t.contains("growth") || t.contains("nutrition")) {
+      return Icons.monitor_weight_outlined;
+    }
+    if (t.contains("hemoglobin") || t.contains("blood")) {
+      return Icons.bloodtype_outlined;
+    }
+    if (t.contains("glucose")) {
+      return Icons.water_drop_outlined;
+    }
+    if (t.contains("development")) {
+      return Icons.psychology_outlined;
+    }
+    if (t.contains("vaccination")) {
+      return Icons.vaccines_outlined;
+    }
+    if (t.contains("vision") || t.contains("hearing")) {
+      return Icons.visibility_outlined;
+    }
+    if (t.contains("danger")) {
+      return Icons.warning_amber_outlined;
+    }
+    if (t.contains("behavioral")) {
+      return Icons.emoji_emotions_outlined;
+    }
+    if (t.contains("oral")) {
+      return Icons.emoji_food_beverage_outlined;
+    }
+    if (t.contains("school")) {
+      return Icons.school_outlined;
+    }
+
+    return Icons.medical_information_outlined;
+  }
+
+  Color get _stripeColor {
+    final item = widget.item;
+
+    if (item.redFlag) return Colors.red.shade700;
+    if (item.checked) return Colors.teal.shade600;
+
+    return Colors.grey.shade300;
   }
 
   @override
   Widget build(BuildContext context) {
-    Color borderColor = Colors.grey.shade300;
-
-    if (widget.item.redFlag) {
-      borderColor = Colors.red;
-    } else if (widget.item.checked) {
-      borderColor = Colors.green;
-    }
+    final item = widget.item;
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      margin: const EdgeInsets.symmetric(vertical: 12),
-      padding: const EdgeInsets.all(20),
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: borderColor, width: 2),
+        color: item.redFlag ? Colors.red.shade50 : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: item.redFlag
+              ? Colors.red.shade200
+              : Colors.grey.shade200,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.shade200,
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 3),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final bool isPhone = constraints.maxWidth < 600;
-
-              if (isPhone) {
-                return Column(
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              width: 6,
+              decoration: BoxDecoration(
+                color: _stripeColor,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(14),
+                  bottomLeft: Radius.circular(14),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      widget.item.title,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    Text(
-                      widget.description,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              widget.item.checked = !widget.item.checked;
-                              if (!widget.item.checked) {
-                                widget.item.redFlag = false;
-                              }
-                            });
-                          },
-                          icon: Icon(
-                            Icons.check,
-                            color: widget.item.checked
-                                ? Colors.white
-                                : Colors.green,
-                          ),
-                          label: Text(
-                            widget.item.checked ? "Checked" : "Mark Checked",
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: widget.item.checked
-                                ? Colors.green
-                                : Colors.white,
-                            foregroundColor: widget.item.checked
-                                ? Colors.white
-                                : Colors.green,
-                            side: const BorderSide(color: Colors.green),
-                          ),
-                        ),
-
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              if (!widget.item.checked) {
-                                widget.item.checked = true;
-                              }
-                              widget.item.redFlag = !widget.item.redFlag;
-                            });
-                          },
-                          icon: Icon(
-                            Icons.flag,
-                            color: widget.item.redFlag
-                                ? Colors.white
-                                : Colors.red,
-                          ),
-                          label: Text(
-                            widget.item.redFlag ? "Flagged" : "Flag Red Flag",
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: widget.item.redFlag
-                                ? Colors.red
-                                : Colors.white,
-                            foregroundColor: widget.item.redFlag
-                                ? Colors.white
-                                : Colors.red,
-                            side: const BorderSide(color: Colors.red),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              }
-
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
+                    Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          widget.item.title,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
+                        Icon(
+                          _iconFor(item.title),
+                          color: Colors.deepPurple.shade300,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              if (item.description.isNotEmpty) ...[
+                                const SizedBox(height: 3),
+                                Text(
+                                  item.description,
+                                  style: TextStyle(
+                                    color: Colors.grey.shade700,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-
-                        const SizedBox(height: 8),
-
-                        Text(
-                          widget.description,
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey.shade700,
+                        if (!item.isUniversal)
+                          Column(
+                            children: [
+                              Checkbox(
+                                value: item.checked,
+                                activeColor: Colors.teal.shade600,
+                                onChanged: (value) {
+                                  setState(() {
+                                    item.checked = value ?? false;
+                                  });
+                                  widget.onChanged();
+                                },
+                              ),
+                              Text(
+                                "Checked",
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
                           ),
+                        const SizedBox(width: 6),
+                        Column(
+                          children: [
+                            Switch(
+                              value: item.redFlag,
+                              activeColor: Colors.red.shade700,
+                              onChanged: (value) {
+                                setState(() {
+                                  item.redFlag = value;
+                                });
+                                widget.onChanged();
+                              },
+                            ),
+                            Text(
+                              "Red flag",
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ),
 
-                  const SizedBox(width: 20),
-
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            widget.item.checked = !widget.item.checked;
-                            if (!widget.item.checked) {
-                              widget.item.redFlag = false;
-                            }
-                          });
-                        },
-                        icon: Icon(
-                          Icons.check,
-                          color: widget.item.checked
-                              ? Colors.white
-                              : Colors.green,
+                    if (item.redFlag &&
+                        item.redFlagText.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
                         ),
-                        label: Text(
-                          widget.item.checked ? "Checked" : "Mark Checked",
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade100,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: widget.item.checked
-                              ? Colors.green
-                              : Colors.white,
-                          foregroundColor: widget.item.checked
-                              ? Colors.white
-                              : Colors.green,
-                          side: const BorderSide(color: Colors.green),
-                        ),
-                      ),
-
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            if (!widget.item.checked) {
-                              widget.item.checked = true;
-                            }
-                            widget.item.redFlag = !widget.item.redFlag;
-                          });
-                        },
-                        icon: Icon(
-                          Icons.flag,
-                          color: widget.item.redFlag
-                              ? Colors.white
-                              : Colors.red,
-                        ),
-                        label: Text(
-                          widget.item.redFlag ? "Flagged" : "Flag Red Flag",
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: widget.item.redFlag
-                              ? Colors.red
-                              : Colors.white,
-                          foregroundColor: widget.item.redFlag
-                              ? Colors.white
-                              : Colors.red,
-                          side: const BorderSide(color: Colors.red),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.flag,
+                              size: 14,
+                              color: Colors.red.shade800,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                item.redFlagText,
+                                style: TextStyle(
+                                  color: Colors.red.shade800,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
-                  ),
-                ],
-              );
-            },
-          ),
 
-          const SizedBox(height: 20),
-
-          TextField(
-            controller: notesController,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: "Notes",
-              hintText: "Optional note / measured value...",
-              border: OutlineInputBorder(),
+                    if (!item.isUniversal) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 160,
+                            child: TextField(
+                              controller: _valueController,
+                              decoration: InputDecoration(
+                                labelText: item.unit.isEmpty
+                                    ? "Value"
+                                    : "Value (${item.unit})",
+                                isDense: true,
+                                border:
+                                    const OutlineInputBorder(),
+                              ),
+                              onChanged: (value) {
+                                item.value = value;
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: _notesController,
+                              decoration: const InputDecoration(
+                                labelText: "Remarks (optional)",
+                                isDense: true,
+                                border: OutlineInputBorder(),
+                              ),
+                              maxLines: 1,
+                              onChanged: (value) {
+                                item.notes = value;
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
