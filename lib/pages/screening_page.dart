@@ -7,6 +7,7 @@ import 'package:web_page/models/screening_item.dart';
 import 'package:web_page/services/firestore_service.dart';
 import 'package:web_page/services/screening_service.dart';
 import 'package:web_page/widgets/screening_card.dart';
+import 'package:web_page/pages/digital_prescription_page.dart';
 
 class ScreeningPage extends StatefulWidget {
   final String childID;
@@ -100,6 +101,89 @@ class _ScreeningPageState extends State<ScreeningPage> {
     });
   }
 
+  Future<void> _showPrescriptionOptions() async {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 15),
+
+              const Text(
+                "Add Prescription",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+
+              const SizedBox(height: 15),
+
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text("Camera"),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Camera coming soon")),
+                  );
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.photo),
+                title: const Text("Gallery"),
+                onTap: () async {
+                  Navigator.pop(context);
+
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.image,
+                    withData: true,
+                  );
+
+                  if (result == null || result.files.isEmpty) return;
+
+                  setState(() {
+                    prescriptionBytes = result.files.first.bytes;
+                    prescriptionFileName = result.files.first.name;
+                  });
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf),
+                title: const Text("PDF"),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickPrescription();
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.edit_document),
+                title: const Text("Digital Prescription"),
+                onTap: () {
+                  Navigator.pop(context);
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const DigitalPrescriptionPage(),
+                    ),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _saveScreening() async {
     setState(() => isSaving = true);
 
@@ -123,7 +207,9 @@ class _ScreeningPageState extends State<ScreeningPage> {
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
     } finally {
       if (mounted) setState(() => isSaving = false);
     }
@@ -144,10 +230,21 @@ class _ScreeningPageState extends State<ScreeningPage> {
               padding: const EdgeInsets.only(right: 16),
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: Colors.red.shade700, borderRadius: BorderRadius.circular(20)),
-                  child: Text("⚑ $_activeFlagCount flagged",
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade700,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    "⚑ $_activeFlagCount flagged",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -177,24 +274,48 @@ class _ScreeningPageState extends State<ScreeningPage> {
               constraints: const BoxConstraints(maxWidth: 900),
               margin: const EdgeInsets.all(20),
               padding: const EdgeInsets.all(30),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+              ),
               child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Center(
-                      child: Text("New Screening", style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
+                      child: Text(
+                        "New Screening",
+                        style: TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 30),
-                    Text("Child ID : ${data["childID"]}", style: const TextStyle(fontSize: 18)),
+                    Text(
+                      "Child ID : ${data["childID"]}",
+                      style: const TextStyle(fontSize: 18),
+                    ),
                     const SizedBox(height: 8),
-                    Text("Child Name : ${data["childName"]}", style: const TextStyle(fontSize: 18)),
+                    Text(
+                      "Child Name : ${data["childName"]}",
+                      style: const TextStyle(fontSize: 18),
+                    ),
                     const SizedBox(height: 8),
-                    Text("Age : $years Years $months Months", style: const TextStyle(fontSize: 18)),
+                    Text(
+                      "Age : $years Years $months Months",
+                      style: const TextStyle(fontSize: 18),
+                    ),
                     const SizedBox(height: 25),
                     Center(
-                      child: Text(ageGroup,
-                          style: const TextStyle(fontSize: 24, color: Colors.deepPurple, fontWeight: FontWeight.bold)),
+                      child: Text(
+                        ageGroup,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          color: Colors.deepPurple,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 16),
                     Row(
@@ -206,17 +327,29 @@ class _ScreeningPageState extends State<ScreeningPage> {
                               value: _completionRatio,
                               minHeight: 10,
                               backgroundColor: Colors.deepPurple.shade50,
-                              valueColor: AlwaysStoppedAnimation(Colors.deepPurple.shade400),
+                              valueColor: AlwaysStoppedAnimation(
+                                Colors.deepPurple.shade400,
+                              ),
                             ),
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Text("${(_completionRatio * 100).round()}% complete",
-                            style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+                        Text(
+                          "${(_completionRatio * 100).round()}% complete",
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontSize: 12,
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 25),
-                    ...ageBandItems.map((item) => ScreeningCard(item: item, onChanged: () => setState(() {}))),
+                    ...ageBandItems.map(
+                      (item) => ScreeningCard(
+                        item: item,
+                        onChanged: () => setState(() {}),
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -228,10 +361,20 @@ class _ScreeningPageState extends State<ScreeningPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text("Universal Red Flags — refer regardless of age band",
-                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
+                          Text(
+                            "Universal Red Flags — refer regardless of age band",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.amber.shade900,
+                            ),
+                          ),
                           const SizedBox(height: 10),
-                          ...universalItems.map((item) => ScreeningCard(item: item, onChanged: () => setState(() {}))),
+                          ...universalItems.map(
+                            (item) => ScreeningCard(
+                              item: item,
+                              onChanged: () => setState(() {}),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -245,17 +388,46 @@ class _ScreeningPageState extends State<ScreeningPage> {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.upload_file, color: Colors.deepPurple.shade400),
+                          Icon(
+                            Icons.upload_file,
+                            color: Colors.deepPurple.shade400,
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: Text(
-                              prescriptionFileName ?? "No prescription attached",
-                              style: TextStyle(color: Colors.grey.shade700),
-                              overflow: TextOverflow.ellipsis,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (prescriptionBytes != null)
+                                  Container(
+                                    height: 120,
+                                    width: 120,
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: Image.memory(
+                                        prescriptionBytes!,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  ),
+
+                                Text(
+                                  prescriptionFileName ??
+                                      "No prescription attached",
+                                  style: TextStyle(color: Colors.grey.shade700),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
                             ),
                           ),
                           TextButton.icon(
-                            onPressed: _pickPrescription,
+                            onPressed: _showPrescriptionOptions,
                             icon: const Icon(Icons.attach_file),
                             label: const Text("Upload Prescription"),
                           ),
@@ -270,8 +442,12 @@ class _ScreeningPageState extends State<ScreeningPage> {
                         onPressed: isSaving ? null : _saveScreening,
                         icon: isSaving
                             ? const SizedBox(
-                                width: 18, height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
                               )
                             : const Icon(Icons.save),
                         label: Text(isSaving ? "Saving..." : "Save Screening"),
