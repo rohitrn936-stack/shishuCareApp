@@ -170,7 +170,8 @@ class _ScreeningPageState extends State<ScreeningPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const DigitalPrescriptionPage(),
+                      builder: (context) =>
+                          DigitalPrescriptionPage(childID: widget.childID),
                     ),
                   );
                 },
