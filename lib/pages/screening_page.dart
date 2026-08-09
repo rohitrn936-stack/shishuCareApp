@@ -1,13 +1,15 @@
 import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:web_page/constants/app_colours.dart';
 import 'package:web_page/data/screening_checklists.dart';
 import 'package:web_page/models/screening_item.dart';
 import 'package:web_page/services/firestore_service.dart';
 import 'package:web_page/services/screening_service.dart';
+import 'package:web_page/widgets/app_card.dart';
 import 'package:web_page/widgets/screening_card.dart';
-import 'package:web_page/pages/digital_prescription_page.dart';
 
 class ScreeningPage extends StatefulWidget {
   final String childID;
@@ -19,14 +21,15 @@ class ScreeningPage extends StatefulWidget {
 }
 
 class _ScreeningPageState extends State<ScreeningPage> {
-  final FirestoreService firestoreService = FirestoreService();
-  final ScreeningService screeningService = ScreeningService();
+  final firestoreService = FirestoreService();
+  final screeningService = ScreeningService();
 
   late Future<DocumentSnapshot> childFuture;
 
   List<ScreeningItem> ageBandItems = [];
   List<ScreeningItem> universalItems = [];
-  String ageGroup = "";
+
+  String ageGroup = '';
   bool itemsBuilt = false;
   bool isSaving = false;
 
@@ -39,34 +42,47 @@ class _ScreeningPageState extends State<ScreeningPage> {
     childFuture = firestoreService.getChild(widget.childID);
   }
 
+  String _getAgeGroup(int years, int months) {
+    if (years == 0 && months < 2) {
+      return 'Birth - 6 Weeks';
+    }
+
+    if (years == 0 && months < 6) {
+      return '6 Weeks - 6 Months';
+    }
+
+    if (years == 0) {
+      return '6 - 12 Months';
+    }
+
+    if (years < 2) {
+      return '1 - 2 Years';
+    }
+
+    if (years < 3) {
+      return '2 - 3 Years';
+    }
+
+    return '3 - 5 Years';
+  }
+
   void _buildItems(Map<String, dynamic> data) {
     if (itemsBuilt) return;
 
-    final int years = data["ageYears"];
-    final int months = data["ageMonths"];
+    final int years = (data['ageYears'] as num?)?.toInt() ?? 0;
 
-    if (years == 0 && months < 2) {
-      ageGroup = "Birth - 6 Weeks";
-    } else if (years == 0 && months < 6) {
-      ageGroup = "6 Weeks - 6 Months";
-    } else if (years == 0) {
-      ageGroup = "6 - 12 Months";
-    } else if (years < 2) {
-      ageGroup = "1 - 2 Years";
-    } else if (years < 3) {
-      ageGroup = "2 - 3 Years";
-    } else {
-      ageGroup = "3 - 5 Years";
-    }
+    final int months = (data['ageMonths'] as num?)?.toInt() ?? 0;
+
+    ageGroup = _getAgeGroup(years, months);
 
     final checklist = screeningChecklists[ageGroup] ?? [];
 
-    ageBandItems = checklist.map((e) {
+    ageBandItems = checklist.map((entry) {
       return ScreeningItem(
-        title: e["title"]!,
-        description: e["description"]!,
-        redFlagText: e["redFlag"]!,
-        unit: e["unit"] ?? "",
+        title: entry['title']!,
+        description: entry['description']!,
+        redFlagText: entry['redFlag']!,
+        unit: entry['unit'] ?? '',
       );
     }).toList();
 
@@ -77,116 +93,45 @@ class _ScreeningPageState extends State<ScreeningPage> {
     itemsBuilt = true;
   }
 
-  int get _activeFlagCount =>
-      [...ageBandItems, ...universalItems].where((i) => i.redFlag).length;
+  List<ScreeningItem> get _allItems {
+    return [...ageBandItems, ...universalItems];
+  }
+
+  int get _activeFlagCount {
+    return _allItems.where((item) => item.redFlag).length;
+  }
 
   double get _completionRatio {
     if (ageBandItems.isEmpty) return 0;
-    final checkedCount = ageBandItems.where((i) => i.checked).length;
+
+    final checkedCount = ageBandItems.where((item) => item.checked).length;
+
     return checkedCount / ageBandItems.length;
   }
 
   Future<void> _pickPrescription() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ["pdf", "jpg", "jpeg", "png"],
+      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
       withData: true,
     );
 
-    if (result == null || result.files.isEmpty) return;
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+
+    final file = result.files.first;
 
     setState(() {
-      prescriptionBytes = result.files.first.bytes;
-      prescriptionFileName = result.files.first.name;
+      prescriptionBytes = file.bytes;
+      prescriptionFileName = file.name;
     });
   }
 
-  Future<void> _showPrescriptionOptions() async {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 15),
-
-              const Text(
-                "Add Prescription",
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 15),
-
-              ListTile(
-                leading: const Icon(Icons.camera_alt),
-                title: const Text("Camera"),
-                onTap: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Camera coming soon")),
-                  );
-                },
-              ),
-
-              ListTile(
-                leading: const Icon(Icons.photo),
-                title: const Text("Gallery"),
-                onTap: () async {
-                  Navigator.pop(context);
-
-                  final result = await FilePicker.platform.pickFiles(
-                    type: FileType.image,
-                    withData: true,
-                  );
-
-                  if (result == null || result.files.isEmpty) return;
-
-                  setState(() {
-                    prescriptionBytes = result.files.first.bytes;
-                    prescriptionFileName = result.files.first.name;
-                  });
-                },
-              ),
-
-              ListTile(
-                leading: const Icon(Icons.picture_as_pdf),
-                title: const Text("PDF"),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickPrescription();
-                },
-              ),
-
-              ListTile(
-                leading: const Icon(Icons.edit_document),
-                title: const Text("Digital Prescription"),
-                onTap: () {
-                  Navigator.pop(context);
-
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          DigitalPrescriptionPage(childID: widget.childID),
-                    ),
-                  );
-                },
-              ),
-
-              const SizedBox(height: 10),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Future<void> _saveScreening() async {
-    setState(() => isSaving = true);
+    setState(() {
+      isSaving = true;
+    });
 
     final allResults = [...ageBandItems, ...universalItems];
 
@@ -194,7 +139,7 @@ class _ScreeningPageState extends State<ScreeningPage> {
       await screeningService.saveScreening(
         childID: widget.childID,
         ageGroup: ageGroup,
-        results: allResults.map((e) => e.toJson()).toList(),
+        results: allResults.map((item) => item.toJson()).toList(),
         prescriptionBytes: prescriptionBytes,
         prescriptionFileName: prescriptionFileName,
       );
@@ -208,11 +153,16 @@ class _ScreeningPageState extends State<ScreeningPage> {
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
     } finally {
-      if (mounted) setState(() => isSaving = false);
+      if (mounted) {
+        setState(() {
+          isSaving = false;
+        });
+      }
     }
   }
 
@@ -220,11 +170,14 @@ class _ScreeningPageState extends State<ScreeningPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F2FA),
+
       appBar: AppBar(
-        title: const Text('New Screening'),
+        title: const Text(
+          'New Screening',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
         centerTitle: true,
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
+
         actions: [
           if (_activeFlagCount > 0)
             Padding(
@@ -240,7 +193,7 @@ class _ScreeningPageState extends State<ScreeningPage> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    "⚑ $_activeFlagCount flagged",
+                    '⚑ $_activeFlagCount flagged',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -251,215 +204,383 @@ class _ScreeningPageState extends State<ScreeningPage> {
             ),
         ],
       ),
+
       body: FutureBuilder<DocumentSnapshot>(
         future: childFuture,
+
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
+
           if (snapshot.hasError) {
-            return Center(child: Text(snapshot.error.toString()));
+            return Center(child: Text('Error: ${snapshot.error}'));
           }
+
           if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text('Child not found'));
+            return const Center(child: Text('Child not found.'));
           }
 
           final data = snapshot.data!.data() as Map<String, dynamic>;
+
           _buildItems(data);
 
-          final int years = data["ageYears"];
-          final int months = data["ageMonths"];
+          final checkedCount = _allItems.where((item) => item.checked).length;
 
-          return Center(
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 900),
-              margin: const EdgeInsets.all(20),
-              padding: const EdgeInsets.all(30),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-              ),
+          final flagCount = _allItems.where((item) => item.redFlag).length;
+
+          final progress = _allItems.isEmpty
+              ? 0.0
+              : checkedCount / _allItems.length;
+
+          return SafeArea(
+            child: Center(
               child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Center(
-                      child: Text(
-                        "New Screening",
-                        style: TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-                    Text(
-                      "Child ID : ${data["childID"]}",
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      "Child Name : ${data["childName"]}",
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      "Age : $years Years $months Months",
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                    const SizedBox(height: 25),
-                    Center(
-                      child: Text(
-                        ageGroup,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          color: Colors.deepPurple,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: LinearProgressIndicator(
-                              value: _completionRatio,
-                              minHeight: 10,
-                              backgroundColor: Colors.deepPurple.shade50,
-                              valueColor: AlwaysStoppedAnimation(
-                                Colors.deepPurple.shade400,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          "${(_completionRatio * 100).round()}% complete",
-                          style: TextStyle(
-                            color: Colors.grey.shade700,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 25),
-                    ...ageBandItems.map(
-                      (item) => ScreeningCard(
-                        item: item,
-                        onChanged: () => setState(() {}),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.amber.shade200),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Universal Red Flags — refer regardless of age band",
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.amber.shade900,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          ...universalItems.map(
-                            (item) => ScreeningCard(
-                              item: item,
-                              onChanged: () => setState(() {}),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.deepPurple.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.deepPurple.shade100),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.upload_file,
-                            color: Colors.deepPurple.shade400,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                padding: const EdgeInsets.all(20),
+
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 980),
+
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+
+                    children: [
+                      _screeningHeader(data),
+
+                      const SizedBox(height: 16),
+
+                      AppCard(
+                        padding: const EdgeInsets.all(20),
+
+                        child: Column(
+                          children: [
+                            Row(
                               children: [
-                                if (prescriptionBytes != null)
-                                  Container(
-                                    height: 120,
-                                    width: 120,
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    decoration: BoxDecoration(
-                                      border: Border.all(
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(10),
-                                      child: Image.memory(
-                                        prescriptionBytes!,
-                                        fit: BoxFit.cover,
-                                      ),
+                                const Icon(
+                                  Icons.timeline_rounded,
+                                  color: AppColors.primary,
+                                ),
+
+                                const SizedBox(width: 10),
+
+                                const Expanded(
+                                  child: Text(
+                                    'Screening progress',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
                                     ),
                                   ),
+                                ),
 
                                 Text(
-                                  prescriptionFileName ??
-                                      "No prescription attached",
-                                  style: TextStyle(color: Colors.grey.shade700),
-                                  overflow: TextOverflow.ellipsis,
+                                  '$checkedCount/${_allItems.length}',
+                                  style: const TextStyle(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
                               ],
                             ),
-                          ),
-                          TextButton.icon(
-                            onPressed: _showPrescriptionOptions,
-                            icon: const Icon(Icons.attach_file),
-                            label: const Text("Upload Prescription"),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton.icon(
-                        onPressed: isSaving ? null : _saveScreening,
-                        icon: isSaving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
+
+                            const SizedBox(height: 13),
+
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+
+                              child: LinearProgressIndicator(
+                                value: progress,
+                                minHeight: 9,
+                                backgroundColor: AppColors.primary.withOpacity(
+                                  .10,
                                 ),
-                              )
-                            : const Icon(Icons.save),
-                        label: Text(isSaving ? "Saving..." : "Save Screening"),
+                                color: AppColors.primary,
+                              ),
+                            ),
+
+                            const SizedBox(height: 14),
+
+                            Row(
+                              children: [
+                                _SummaryBadge(
+                                  icon: Icons.check_circle_rounded,
+                                  label: '$checkedCount checked',
+                                  color: AppColors.success,
+                                ),
+
+                                const SizedBox(width: 9),
+
+                                _SummaryBadge(
+                                  icon: Icons.flag_rounded,
+                                  label: '$flagCount red flags',
+                                  color: AppColors.danger,
+                                ),
+
+                                const Spacer(),
+
+                                Text(
+                                  '${_allItems.length} checks',
+                                  style: const TextStyle(
+                                    color: AppColors.mutedText,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+
+                      const SizedBox(height: 22),
+
+                      const AppSectionTitle(
+                        title: 'Age-based checklist',
+                        subtitle:
+                            'Tap the status controls as you complete each assessment.',
+                        icon: Icons.fact_check_outlined,
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // AGE-BASED ITEMS
+                      for (final item in ageBandItems)
+                        ScreeningCard(item: item),
+
+                      // UNIVERSAL RED FLAGS
+                      if (universalItems.isNotEmpty) ...[
+                        const SizedBox(height: 22),
+
+                        const AppSectionTitle(
+                          title: 'Universal red flags',
+                          subtitle:
+                              'These warning signs should be considered regardless of age band.',
+                          icon: Icons.warning_amber_rounded,
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        AppCard(
+                          padding: const EdgeInsets.all(16),
+
+                          child: Column(
+                            children: [
+                              ...universalItems.map(
+                                (item) => ScreeningCard(item: item),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 22),
+
+                      // PRESCRIPTION UPLOAD
+                      AppCard(
+                        padding: const EdgeInsets.all(16),
+
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.upload_file_rounded,
+                              color: AppColors.primary,
+                            ),
+
+                            const SizedBox(width: 12),
+
+                            Expanded(
+                              child: Text(
+                                prescriptionFileName ??
+                                    'No prescription attached',
+
+                                style: const TextStyle(
+                                  color: AppColors.mutedText,
+                                ),
+
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+
+                            TextButton.icon(
+                              onPressed: _pickPrescription,
+
+                              icon: const Icon(Icons.attach_file),
+
+                              label: const Text('Upload Prescription'),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 22),
+
+                      // SAVE BUTTON
+                      SizedBox(
+                        width: double.infinity,
+
+                        child: ElevatedButton.icon(
+                          onPressed: isSaving ? null : _saveScreening,
+
+                          icon: isSaving
+                              ? const SizedBox(
+                                  width: 19,
+                                  height: 19,
+
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.save_rounded),
+
+                          label: Text(
+                            isSaving ? 'Saving screening...' : 'Save screening',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _screeningHeader(Map<String, dynamic> data) {
+    final years = data['ageYears'] ?? 0;
+
+    final months = data['ageMonths'] ?? 0;
+
+    return Container(
+      width: double.infinity,
+
+      padding: const EdgeInsets.all(24),
+
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [AppColors.primaryDark, AppColors.primary],
+
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+
+        borderRadius: BorderRadius.circular(24),
+      ),
+
+      child: Row(
+        children: [
+          const CircleAvatar(
+            radius: 30,
+
+            backgroundColor: Colors.white24,
+
+            child: Icon(
+              Icons.child_care_rounded,
+              color: Colors.white,
+              size: 34,
+            ),
+          ),
+
+          const SizedBox(width: 14),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+
+              children: [
+                Text(
+                  data['childName']?.toString() ?? 'Child',
+
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+
+                const SizedBox(height: 5),
+
+                Text(
+                  '${data['childID']} • $years years $months months',
+
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 12),
+
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(.14),
+
+              borderRadius: BorderRadius.circular(14),
+            ),
+
+            child: Text(
+              ageGroup,
+
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryBadge extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _SummaryBadge({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+
+      decoration: BoxDecoration(
+        color: color.withOpacity(.08),
+        borderRadius: BorderRadius.circular(30),
+      ),
+
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+
+        children: [
+          Icon(icon, size: 15, color: color),
+
+          const SizedBox(width: 5),
+
+          Text(
+            label,
+
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }

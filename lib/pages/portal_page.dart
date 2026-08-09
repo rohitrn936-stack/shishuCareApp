@@ -1,6 +1,11 @@
+
 import 'package:flutter/material.dart';
+import 'package:web_page/constants/app_colours.dart';
+import 'package:web_page/pages/login_page.dart';
 import 'package:web_page/pages/register_child_page.dart';
 import 'package:web_page/pages/search_child_page.dart';
+import 'package:web_page/widgets/app_card.dart';
+import 'package:web_page/widgets/portal_action_card.dart';
 
 class PortalPage extends StatelessWidget {
   const PortalPage({super.key});
@@ -8,137 +13,207 @@ class PortalPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.deepPurple.shade50,
-
-      body: Center(
-        child: Container(
-          width: 700,
-          padding: const EdgeInsets.all(30),
-
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: const [BoxShadow(blurRadius: 15, color: Colors.black12)],
+      appBar: AppBar(
+        titleSpacing: 22,
+        title: const Row(
+          children: [
+            Icon(Icons.child_care_rounded),
+            SizedBox(width: 10),
+            Text(
+              'ShishuCare',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Log out',
+            onPressed: () {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginPage()),
+                (_) => false,
+              );
+            },
+            icon: const Icon(Icons.logout_rounded),
           ),
+          const SizedBox(width: 10),
+        ],
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 36),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1050),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _hero(),
+                  const SizedBox(height: 24),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (constraints.maxWidth < 700) {
+                        return Column(
+                          children: [
+                            PortalActionCard(
+                              icon: Icons.person_add_alt_1_rounded,
+                              title: 'Register new child',
+                              description:
+                                  'Create a profile and capture the child’s basic details.',
+                              actionLabel: 'Start registration',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const RegisterChildPage(),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            PortalActionCard(
+                              icon: Icons.manage_search_rounded,
+                              title: 'Find existing child',
+                              description:
+                                  'Search by child ID or name and continue a screening.',
+                              actionLabel: 'Open search',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const SearchChildPage(),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      }
 
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                "Child Screening Portal",
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 10),
-
-              const Text(
-                "Choose an option below",
-                style: TextStyle(fontSize: 18, color: Colors.grey),
-              ),
-
-              const SizedBox(height: 40),
-
-              InkWell(
-                borderRadius: BorderRadius.circular(20),
-
-                onTap: () {
-                  Navigator.push(
-                    context,
-
-                    MaterialPageRoute(
-                      builder: (context) => const RegisterChildPage(),
-                    ),
-                  );
-                  // Navigate to Register
-                },
-
-                child: Card(
-                  elevation: 5,
-
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: PortalActionCard(
+                              icon: Icons.person_add_alt_1_rounded,
+                              title: 'Register new child',
+                              description:
+                                  'Create a profile and capture the child’s basic details.',
+                              actionLabel: 'Start registration',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const RegisterChildPage(),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 18),
+                          Expanded(
+                            child: PortalActionCard(
+                              icon: Icons.manage_search_rounded,
+                              title: 'Find existing child',
+                              description:
+                                  'Search by child ID or name and continue a screening.',
+                              actionLabel: 'Open search',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const SearchChildPage(),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
-
-                  child: const Padding(
-                    padding: EdgeInsets.all(30),
-
+                  const SizedBox(height: 18),
+                  AppCard(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 17,
+                    ),
                     child: Row(
                       children: [
-                        Icon(
-                          Icons.person_add,
-                          size: 50,
-                          color: Colors.deepPurple,
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(.10),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.tips_and_updates_rounded,
+                            color: AppColors.primary,
+                          ),
                         ),
-
-                        SizedBox(width: 25),
-
-                        Expanded(
+                        const SizedBox(width: 14),
+                        const Expanded(
                           child: Text(
-                            "Register New Child",
+                            'Tip: Use the child ID for the quickest way to reopen a profile.',
                             style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
+                              color: AppColors.mutedText,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
-
-                        Icon(Icons.arrow_forward_ios),
                       ],
                     ),
                   ),
-                ),
+                ],
               ),
-
-              const SizedBox(height: 25),
-
-              InkWell(
-                borderRadius: BorderRadius.circular(20),
-
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const SearchChildPage(),
-                    ),
-                  );
-                  // Navigate to Search Page
-                },
-
-                child: Card(
-                  elevation: 5,
-
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-
-                  child: const Padding(
-                    padding: EdgeInsets.all(30),
-
-                    child: Row(
-                      children: [
-                        Icon(Icons.search, size: 50, color: Colors.deepPurple),
-
-                        SizedBox(width: 25),
-
-                        Expanded(
-                          child: Text(
-                            "Search Existing Child",
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-
-                        Icon(Icons.arrow_forward_ios),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _hero() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [AppColors.primaryDark, AppColors.primary],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x28673AB7),
+            blurRadius: 28,
+            offset: Offset(0, 13),
+          ),
+        ],
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Good to see you 👋',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Child screening workspace',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 30,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Register a child or find an existing profile to continue.',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 16,
+              height: 1.4,
+            ),
+          ),
+        ],
       ),
     );
   }
