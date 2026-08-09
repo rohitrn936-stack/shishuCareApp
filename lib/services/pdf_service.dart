@@ -17,7 +17,7 @@ class PdfService {
         build: (context) => [
           pw.Center(
             child: pw.Text(
-              "ShishuCare AI",
+              "ShishuCare",
               style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
             ),
           ),
