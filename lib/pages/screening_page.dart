@@ -1,9 +1,13 @@
+import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:web_page/constants/app_colours.dart';
 import 'package:web_page/data/preventive_checklists.dart';
 import 'package:web_page/models/screening_item.dart';
 import 'package:web_page/services/firestore_service.dart';
+import 'package:web_page/services/google_drive_service.dart';
 import 'package:web_page/services/screening_service.dart';
 import 'package:web_page/widgets/app_card.dart';
 import 'package:web_page/widgets/screening_card.dart';
@@ -20,58 +24,129 @@ class ScreeningPage extends StatefulWidget {
 class _ScreeningPageState extends State<ScreeningPage> {
   final firestoreService = FirestoreService();
   final screeningService = ScreeningService();
+  final googleDriveService = GoogleDriveService();
 
   late Future<DocumentSnapshot> childFuture;
+
   final List<ScreeningItem> items = [];
+
   int selectedVisitIndex = 0;
+
   bool initialized = false;
   bool saving = false;
 
+  // --------------------------------------------------
+  // Prescription
+  // --------------------------------------------------
+
+  Uint8List? prescriptionBytes;
+  String? prescriptionFileName;
+
+  // Google Drive file ID returned after successful upload.
+  String? prescriptionDriveFileId;
+
+  bool uploadingPrescription = false;
+
+  // --------------------------------------------------
+  // Visit configuration
+  // --------------------------------------------------
+
   static const List<int> visitTargetDays = [
-    0, 4, 30, 42, 70, 98, 182, 274, 365, 456, 548, 730, 913, 1095,
-    1461, 1826, 2191, 2557, 2922, 3287, 3652, 4018, 4383, 4748, 5114,
-    5479, 5844, 6209, 6575, 7305, 7669,
+    0,
+    4,
+    30,
+    42,
+    70,
+    98,
+    182,
+    274,
+    365,
+    456,
+    548,
+    730,
+    913,
+    1095,
+    1461,
+    1826,
+    2191,
+    2557,
+    2922,
+    3287,
+    3652,
+    4018,
+    4383,
+    4748,
+    5114,
+    5479,
+    5844,
+    6209,
+    6575,
+    7305,
+    7669,
   ];
 
   @override
   void initState() {
     super.initState();
+
     childFuture = firestoreService.getChild(widget.childID);
   }
+
+  // --------------------------------------------------
+  // Initialize screening
+  // --------------------------------------------------
 
   void _initialize(Map<String, dynamic> data) {
     if (initialized) return;
 
     final dob = _readDob(data['dob']);
+
     final ageDays = dob == null
         ? ((data['ageYears'] as num?)?.toInt() ?? 0) * 365 +
-            ((data['ageMonths'] as num?)?.toInt() ?? 0) * 30
+              ((data['ageMonths'] as num?)?.toInt() ?? 0) * 30
         : DateTime.now().difference(dob).inDays;
 
     selectedVisitIndex = _recommendedVisitIndex(ageDays);
+
     _loadVisitItems();
+
     initialized = true;
   }
 
   DateTime? _readDob(dynamic value) {
-    if (value is Timestamp) return value.toDate();
-    if (value is DateTime) return value;
+    if (value is Timestamp) {
+      return value.toDate();
+    }
+
+    if (value is DateTime) {
+      return value;
+    }
+
     return null;
   }
 
   int _recommendedVisitIndex(int ageDays) {
-    if (ageDays <= 2) return 0;
-    if (ageDays >= visitTargetDays.last) return preventiveVisits.length - 1;
+    if (ageDays <= 2) {
+      return 0;
+    }
+
+    if (ageDays >= visitTargetDays.last) {
+      return preventiveVisits.length - 1;
+    }
 
     var bestIndex = 0;
+
     var bestDistance = (ageDays - visitTargetDays[0]).abs();
+
     for (var i = 1; i < visitTargetDays.length; i++) {
       final distance = (ageDays - visitTargetDays[i]).abs();
+
       if (distance < bestDistance) {
         bestDistance = distance;
         bestIndex = i;
       }
     }
+
     return bestIndex.clamp(0, preventiveVisits.length - 1).toInt();
   }
 
@@ -79,27 +154,130 @@ class _ScreeningPageState extends State<ScreeningPage> {
     items
       ..clear()
       ..addAll(
-        preventiveVisits[selectedVisitIndex]
-            .sections
+        preventiveVisits[selectedVisitIndex].sections
             .expand((section) => section.items)
             .map((title) => ScreeningItem(title: title)),
       );
   }
 
+  // --------------------------------------------------
+  // Section helper
+  // --------------------------------------------------
+
   String _sectionForItem(int itemIndex) {
     var cursor = 0;
+
     for (final section in preventiveVisits[selectedVisitIndex].sections) {
-      if (itemIndex < cursor + section.items.length) return section.title;
+      if (itemIndex < cursor + section.items.length) {
+        return section.title;
+      }
+
       cursor += section.items.length;
     }
+
     return 'Physical Examination';
   }
 
+  // --------------------------------------------------
+  // Pick + upload prescription to Google Drive
+  // --------------------------------------------------
+
+  Future<void> _pickPrescription() async {
+    if (uploadingPrescription) {
+      return;
+    }
+
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      withData: true,
+    );
+
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+
+    final file = result.files.first;
+
+    if (file.bytes == null) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not read the selected file.')),
+      );
+
+      return;
+    }
+
+    final bytes = file.bytes!;
+
+    String mimeType = 'application/octet-stream';
+
+    final extension = file.extension?.toLowerCase();
+
+    if (extension == 'jpg' || extension == 'jpeg') {
+      mimeType = 'image/jpeg';
+    } else if (extension == 'png') {
+      mimeType = 'image/png';
+    } else if (extension == 'pdf') {
+      mimeType = 'application/pdf';
+    }
+
+    setState(() {
+      uploadingPrescription = true;
+    });
+
+    try {
+      // --------------------------------------------------
+      // Upload the selected file to Google Drive.
+      // --------------------------------------------------
+
+      final driveFileId = await googleDriveService.uploadFile(
+        fileBytes: bytes,
+        fileName: file.name,
+        mimeType: mimeType,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        prescriptionBytes = bytes;
+        prescriptionFileName = file.name;
+        prescriptionDriveFileId = driveFileId;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Prescription uploaded to Google Drive successfully.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Prescription upload failed: $e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          uploadingPrescription = false;
+        });
+      }
+    }
+  }
+
+  // --------------------------------------------------
+  // Save screening
+  // --------------------------------------------------
+
   Future<void> _saveScreening() async {
-    setState(() => saving = true);
+    setState(() {
+      saving = true;
+    });
 
     try {
       final visit = preventiveVisits[selectedVisitIndex];
+
       await screeningService.saveScreening(
         childID: widget.childID,
         ageGroup: visit.ageLabel,
@@ -108,20 +286,30 @@ class _ScreeningPageState extends State<ScreeningPage> {
       );
 
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Screening saved successfully.')),
       );
+
       Navigator.pop(context);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not save screening: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not save screening: $e')));
       }
     } finally {
-      if (mounted) setState(() => saving = false);
+      if (mounted) {
+        setState(() {
+          saving = false;
+        });
+      }
     }
   }
+
+  // --------------------------------------------------
+  // Build
+  // --------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -138,18 +326,25 @@ class _ScreeningPageState extends State<ScreeningPage> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
+
           if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
           }
+
           if (!snapshot.hasData || !snapshot.data!.exists) {
             return const Center(child: Text('Child not found.'));
           }
 
           final data = snapshot.data!.data() as Map<String, dynamic>;
+
           _initialize(data);
+
           final visit = preventiveVisits[selectedVisitIndex];
+
           final checkedCount = items.where((item) => item.checked).length;
+
           final flagCount = items.where((item) => item.redFlag).length;
+
           final progress = items.isEmpty ? 0.0 : checkedCount / items.length;
 
           return SafeArea(
@@ -162,24 +357,40 @@ class _ScreeningPageState extends State<ScreeningPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _screeningHeader(data, visit),
+
                       const SizedBox(height: 16),
+
                       _visitSelector(),
+
                       const SizedBox(height: 16),
+
                       _progressCard(checkedCount, flagCount, progress),
+
                       const SizedBox(height: 22),
+
                       const AppSectionTitle(
                         title: 'Complete every listed assessment',
                         subtitle:
                             'Each checklist item has its own status, result fields and clinical notes. Measurements have dedicated units and fields.',
                         icon: Icons.fact_check_outlined,
                       ),
+
                       const SizedBox(height: 14),
+
                       ...visit.sections.map((section) => _sectionCard(section)),
-                      const SizedBox(height: 10),
+
+                      const SizedBox(height: 20),
+
+                      _prescriptionCard(),
+
+                      const SizedBox(height: 20),
+
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: saving ? null : _saveScreening,
+                          onPressed: saving || uploadingPrescription
+                              ? null
+                              : _saveScreening,
                           icon: saving
                               ? const SizedBox(
                                   width: 19,
@@ -206,6 +417,151 @@ class _ScreeningPageState extends State<ScreeningPage> {
     );
   }
 
+  // --------------------------------------------------
+  // Prescription UI
+  // --------------------------------------------------
+
+  Widget _prescriptionCard() {
+    return AppCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(.08),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(
+                  Icons.description_outlined,
+                  color: AppColors.primary,
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Prescription',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+
+                    SizedBox(height: 3),
+
+                    Text(
+                      'Attach a prescription image or PDF.',
+                      style: TextStyle(
+                        color: AppColors.mutedText,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          if (prescriptionBytes != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(.05),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.insert_drive_file, color: AppColors.primary),
+
+                  const SizedBox(width: 10),
+
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          prescriptionFileName ?? 'Prescription selected',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+
+                        if (prescriptionDriveFileId != null)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 3),
+                            child: Text(
+                              'Uploaded to Google Drive',
+                              style: TextStyle(
+                                color: Colors.green,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  IconButton(
+                    tooltip: 'Remove prescription',
+                    onPressed: uploadingPrescription
+                        ? null
+                        : () {
+                            setState(() {
+                              prescriptionBytes = null;
+                              prescriptionFileName = null;
+                              prescriptionDriveFileId = null;
+                            });
+                          },
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+
+          if (prescriptionBytes != null) const SizedBox(height: 12),
+
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: uploadingPrescription ? null : _pickPrescription,
+              icon: uploadingPrescription
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.upload_file_rounded),
+              label: Text(
+                uploadingPrescription
+                    ? 'Uploading to Google Drive...'
+                    : prescriptionBytes == null
+                    ? 'Upload Prescription'
+                    : 'Change Prescription',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --------------------------------------------------
+  // Visit selector
+  // --------------------------------------------------
+
   Widget _visitSelector() {
     return AppCard(
       padding: const EdgeInsets.all(18),
@@ -226,7 +582,9 @@ class _ScreeningPageState extends State<ScreeningPage> {
                   color: AppColors.primary,
                 ),
               ),
+
               const SizedBox(width: 12),
+
               const Expanded(
                 child: Text(
                   'Checklist visit',
@@ -235,7 +593,9 @@ class _ScreeningPageState extends State<ScreeningPage> {
               ),
             ],
           ),
+
           const SizedBox(height: 12),
+
           DropdownButtonFormField<int>(
             value: selectedVisitIndex,
             isExpanded: true,
@@ -254,7 +614,10 @@ class _ScreeningPageState extends State<ScreeningPage> {
                 ),
             ],
             onChanged: (value) {
-              if (value == null || value == selectedVisitIndex) return;
+              if (value == null || value == selectedVisitIndex) {
+                return;
+              }
+
               setState(() {
                 selectedVisitIndex = value;
                 _loadVisitItems();
@@ -266,6 +629,10 @@ class _ScreeningPageState extends State<ScreeningPage> {
     );
   }
 
+  // --------------------------------------------------
+  // Progress card
+  // --------------------------------------------------
+
   Widget _progressCard(int checkedCount, int flagCount, double progress) {
     return AppCard(
       padding: const EdgeInsets.all(20),
@@ -274,13 +641,16 @@ class _ScreeningPageState extends State<ScreeningPage> {
           Row(
             children: [
               const Icon(Icons.timeline_rounded, color: AppColors.primary),
+
               const SizedBox(width: 10),
+
               const Expanded(
                 child: Text(
                   'Screening progress',
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                 ),
               ),
+
               Text(
                 '$checkedCount/${items.length}',
                 style: const TextStyle(
@@ -290,7 +660,9 @@ class _ScreeningPageState extends State<ScreeningPage> {
               ),
             ],
           ),
+
           const SizedBox(height: 13),
+
           ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: LinearProgressIndicator(
@@ -300,7 +672,9 @@ class _ScreeningPageState extends State<ScreeningPage> {
               color: AppColors.primary,
             ),
           ),
+
           const SizedBox(height: 14),
+
           Row(
             children: [
               _SummaryBadge(
@@ -308,13 +682,17 @@ class _ScreeningPageState extends State<ScreeningPage> {
                 label: '$checkedCount completed',
                 color: AppColors.success,
               ),
+
               const SizedBox(width: 9),
+
               _SummaryBadge(
                 icon: Icons.flag_rounded,
                 label: '$flagCount red flags',
                 color: AppColors.danger,
               ),
+
               const Spacer(),
+
               Text(
                 '${items.length} checklist items',
                 style: const TextStyle(
@@ -330,9 +708,18 @@ class _ScreeningPageState extends State<ScreeningPage> {
     );
   }
 
+  // --------------------------------------------------
+  // Section card
+  // --------------------------------------------------
+
   Widget _sectionCard(PreventiveSection section) {
     final startIndex = _itemStartIndex(section);
-    final sectionItems = items.sublist(startIndex, startIndex + section.items.length);
+
+    final sectionItems = items.sublist(
+      startIndex,
+      startIndex + section.items.length,
+    );
+
     final completed = sectionItems.where((item) => item.checked).length;
 
     return AppCard(
@@ -344,7 +731,10 @@ class _ScreeningPageState extends State<ScreeningPage> {
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
         leading: CircleAvatar(
           backgroundColor: AppColors.primary.withOpacity(.08),
-          child: const Icon(Icons.playlist_add_check_rounded, color: AppColors.primary),
+          child: const Icon(
+            Icons.playlist_add_check_rounded,
+            color: AppColors.primary,
+          ),
         ),
         title: Text(
           section.title,
@@ -363,17 +753,31 @@ class _ScreeningPageState extends State<ScreeningPage> {
     );
   }
 
+  // --------------------------------------------------
+  // Item start index
+  // --------------------------------------------------
+
   int _itemStartIndex(PreventiveSection target) {
     var index = 0;
+
     for (final section in preventiveVisits[selectedVisitIndex].sections) {
-      if (identical(section, target)) return index;
+      if (identical(section, target)) {
+        return index;
+      }
+
       index += section.items.length;
     }
+
     return index;
   }
 
+  // --------------------------------------------------
+  // Header
+  // --------------------------------------------------
+
   Widget _screeningHeader(Map<String, dynamic> data, PreventiveVisit visit) {
     final years = data['ageYears'] ?? 0;
+
     final months = data['ageMonths'] ?? 0;
 
     return Container(
@@ -392,9 +796,15 @@ class _ScreeningPageState extends State<ScreeningPage> {
           const CircleAvatar(
             radius: 30,
             backgroundColor: Colors.white24,
-            child: Icon(Icons.child_care_rounded, color: Colors.white, size: 34),
+            child: Icon(
+              Icons.child_care_rounded,
+              color: Colors.white,
+              size: 34,
+            ),
           ),
+
           const SizedBox(width: 14),
+
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -407,7 +817,9 @@ class _ScreeningPageState extends State<ScreeningPage> {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
+
                 const SizedBox(height: 5),
+
                 Text(
                   '${data['childID']} • $years years $months months',
                   style: const TextStyle(
@@ -418,6 +830,7 @@ class _ScreeningPageState extends State<ScreeningPage> {
               ],
             ),
           ),
+
           Container(
             constraints: const BoxConstraints(maxWidth: 230),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
@@ -439,6 +852,10 @@ class _ScreeningPageState extends State<ScreeningPage> {
     );
   }
 }
+
+// --------------------------------------------------
+// Summary badge
+// --------------------------------------------------
 
 class _SummaryBadge extends StatelessWidget {
   final IconData icon;
