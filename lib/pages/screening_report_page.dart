@@ -1,3 +1,4 @@
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
@@ -18,16 +19,11 @@ class ScreeningReportPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final data = screening.data() as Map<String, dynamic>;
-
     final List results = (data['results'] as List?) ?? [];
-
-    final Timestamp? timestamp = data['screeningDate'] as Timestamp?;
-
-    final DateTime? date = timestamp?.toDate();
-
-    final int completed = (data['completedItems'] as num?)?.toInt() ?? 0;
-
-    final int redFlags = (data['redFlagCount'] as num?)?.toInt() ?? 0;
+    final Timestamp? timestamp = data['screeningDate'];
+    final date = timestamp?.toDate();
+    final completed = (data['completedItems'] as num?)?.toInt() ?? 0;
+    final redFlags = (data['redFlagCount'] as num?)?.toInt() ?? 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -36,38 +32,19 @@ class ScreeningReportPage extends StatelessWidget {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
         actions: [
-          if (redFlags > 0)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade700,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '⚑ $redFlags flagged',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ),
           IconButton(
             tooltip: 'Export PDF',
-            onPressed: () => _exportPdf(context, data, results, date),
+            onPressed: () => _exportPdf(
+              context,
+              data,
+              results,
+              date,
+            ),
             icon: const Icon(Icons.picture_as_pdf_rounded),
           ),
           const SizedBox(width: 8),
         ],
       ),
-
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -77,10 +54,14 @@ class ScreeningReportPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _header(data, date, completed, redFlags, results.length),
-
+                  _header(
+                    data,
+                    date,
+                    completed,
+                    redFlags,
+                    results.length,
+                  ),
                   const SizedBox(height: 20),
-
                   const Text(
                     'Checklist results',
                     style: TextStyle(
@@ -89,32 +70,9 @@ class ScreeningReportPage extends StatelessWidget {
                       color: AppColors.text,
                     ),
                   ),
-
                   const SizedBox(height: 12),
-
-                  if (results.isEmpty)
-                    const AppCard(
-                      padding: EdgeInsets.all(20),
-                      child: Center(
-                        child: Text('No checklist results available.'),
-                      ),
-                    ),
-
-                  for (final rawItem in results)
-                    _ResultCard(
-                      item: Map<String, dynamic>.from(rawItem as Map),
-                    ),
-
-                  const SizedBox(height: 12),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.picture_as_pdf_rounded),
-                      label: const Text('Export PDF'),
-                      onPressed: () => _exportPdf(context, data, results, date),
-                    ),
-                  ),
+                  for (final item in results)
+                    _ResultCard(item: item as Map<String, dynamic>),
                 ],
               ),
             ),
@@ -131,8 +89,6 @@ class ScreeningReportPage extends StatelessWidget {
     int redFlags,
     int total,
   ) {
-    final int pending = total - completed < 0 ? 0 : total - completed;
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -154,9 +110,7 @@ class ScreeningReportPage extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
-
           const SizedBox(height: 6),
-
           Text(
             data['ageGroup']?.toString() ?? 'Screening',
             style: const TextStyle(
@@ -165,15 +119,15 @@ class ScreeningReportPage extends StatelessWidget {
               fontWeight: FontWeight.w900,
             ),
           ),
-
           const SizedBox(height: 15),
-
           Wrap(
             spacing: 10,
             runSpacing: 8,
             children: [
-              _HeaderPill(icon: Icons.badge_outlined, text: childID),
-
+              _HeaderPill(
+                icon: Icons.badge_outlined,
+                text: childID,
+              ),
               _HeaderPill(
                 icon: Icons.calendar_today_outlined,
                 text: date == null
@@ -182,15 +136,15 @@ class ScreeningReportPage extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 20),
-
           Row(
             children: [
               Expanded(
-                child: _Metric(value: '$completed/$total', label: 'Completed'),
+                child: _Metric(
+                  value: '$completed/$total',
+                  label: 'Completed',
+                ),
               ),
-
               Expanded(
                 child: _Metric(
                   value: '$redFlags',
@@ -198,9 +152,11 @@ class ScreeningReportPage extends StatelessWidget {
                   danger: redFlags > 0,
                 ),
               ),
-
               Expanded(
-                child: _Metric(value: '$pending', label: 'Pending'),
+                child: _Metric(
+                  value: '${total - completed}',
+                  label: 'Pending',
+                ),
               ),
             ],
           ),
@@ -225,15 +181,14 @@ class ScreeningReportPage extends StatelessWidget {
         results: results,
       );
 
-      await Printing.layoutPdf(onLayout: (format) async => pdf.save());
+      await Printing.layoutPdf(
+        onLayout: (format) async => pdf.save(),
+      );
     } catch (e) {
-      if (!context.mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not export PDF: $e')));
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not export PDF: $e')),
+      );
     }
   }
 }
@@ -256,9 +211,7 @@ class _HeaderPill extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 15, color: Colors.white),
-
           const SizedBox(width: 6),
-
           Text(
             text,
             style: const TextStyle(
@@ -303,9 +256,7 @@ class _Metric extends StatelessWidget {
               fontWeight: FontWeight.w900,
             ),
           ),
-
           const SizedBox(height: 3),
-
           Text(
             label,
             textAlign: TextAlign.center,
@@ -328,27 +279,20 @@ class _ResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool checked = item['checked'] == true;
+    final checked = item['checked'] == true;
+    final redFlag = item['redFlag'] == true;
+    final notes = item['notes']?.toString() ?? '';
+    final status = item['status']?.toString() ?? '';
+    final rawFields = item['fields'];
+    final fields = rawFields is Map
+        ? rawFields.map((key, value) => MapEntry(key.toString(), value.toString()))
+        : <String, String>{};
 
-    final bool redFlag = item['redFlag'] == true;
-
-    final bool isUniversal = item['isUniversal'] == true;
-
-    final String notes = item['notes']?.toString() ?? '';
-
-    final String description = item['description']?.toString() ?? '';
-
-    final String redFlagText = item['redFlagText']?.toString() ?? '';
-
-    final String value = item['value']?.toString() ?? '';
-
-    final String unit = item['unit']?.toString() ?? '';
-
-    final Color statusColor = redFlag
+    final statusColor = redFlag
         ? AppColors.danger
         : checked
-        ? AppColors.success
-        : AppColors.mutedText;
+            ? AppColors.success
+            : AppColors.mutedText;
 
     return AppCard(
       margin: const EdgeInsets.only(bottom: 12),
@@ -356,11 +300,7 @@ class _ResultCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // -----------------------------
-          // TITLE + STATUS
-          // -----------------------------
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Text(
@@ -372,81 +312,28 @@ class _ResultCard extends StatelessWidget {
                   ),
                 ),
               ),
-
-              const SizedBox(width: 10),
-
               _Status(
                 text: redFlag
                     ? 'RED FLAG'
                     : checked
-                    ? 'COMPLETED'
-                    : 'PENDING',
+                        ? 'COMPLETED'
+                        : 'PENDING',
                 color: statusColor,
               ),
             ],
           ),
-
-          // -----------------------------
-          // DESCRIPTION
-          // -----------------------------
-          if (description.isNotEmpty) ...[
-            const SizedBox(height: 10),
-
-            Text(
-              description,
-              style: const TextStyle(color: AppColors.mutedText, height: 1.4),
-            ),
-          ],
-
-          // -----------------------------
-          // RED FLAG INFORMATION
-          // -----------------------------
-          if (redFlag && redFlagText.isNotEmpty) ...[
-            const SizedBox(height: 10),
-
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(
-                  Icons.flag_rounded,
-                  size: 17,
-                  color: AppColors.danger,
-                ),
-
-                const SizedBox(width: 6),
-
-                Expanded(
-                  child: Text(
-                    redFlagText,
-                    style: const TextStyle(
-                      color: AppColors.danger,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-
           const SizedBox(height: 14),
-
-          // -----------------------------
-          // CHECKED / RED FLAG STATUS
-          // -----------------------------
           Wrap(
             spacing: 14,
             runSpacing: 8,
             children: [
-              if (!isUniversal)
-                _InlineStatus(
-                  icon: checked
-                      ? Icons.check_circle_rounded
-                      : Icons.cancel_outlined,
-                  text: checked ? 'Completed' : 'Not completed',
-                  color: checked ? AppColors.success : AppColors.mutedText,
-                ),
-
+              _InlineStatus(
+                icon: checked
+                    ? Icons.check_circle_rounded
+                    : Icons.cancel_outlined,
+                text: checked ? 'Completed' : 'Not completed',
+                color: checked ? AppColors.success : AppColors.mutedText,
+              ),
               _InlineStatus(
                 icon: redFlag
                     ? Icons.flag_rounded
@@ -456,13 +343,15 @@ class _ResultCard extends StatelessWidget {
               ),
             ],
           ),
-
-          // -----------------------------
-          // VALUE
-          // -----------------------------
-          if (!isUniversal && value.isNotEmpty) ...[
-            const SizedBox(height: 13),
-
+          if (status.isNotEmpty && status != 'Pending') ...[
+            const SizedBox(height: 12),
+            Text(
+              'Status: $status',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ],
+          if (fields.isNotEmpty) ...[
+            const SizedBox(height: 12),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(13),
@@ -470,44 +359,63 @@ class _ResultCard extends StatelessWidget {
                 color: AppColors.background,
                 borderRadius: BorderRadius.circular(13),
               ),
-              child: Text(
-                unit.isEmpty ? 'Value: $value' : 'Value: $value $unit',
-                style: const TextStyle(
-                  color: AppColors.text,
-                  fontWeight: FontWeight.w600,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final entry in fields.entries)
+                    if (entry.value.trim().isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 5),
+                        child: Text(
+                          '${_prettyFieldName(entry.key)}: ${entry.value}',
+                          style: const TextStyle(height: 1.35),
+                        ),
+                      ),
+                    ],
+                ],
               ),
             ),
           ],
-
-          // -----------------------------
-          // NOTES
-          // -----------------------------
-          if (!isUniversal) ...[
-            const SizedBox(height: 13),
-
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(13),
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: Text(
-                notes.isEmpty ? 'No clinical notes added.' : notes,
-                style: TextStyle(
-                  color: notes.isEmpty ? AppColors.mutedText : AppColors.text,
-                  fontStyle: notes.isEmpty
-                      ? FontStyle.italic
-                      : FontStyle.normal,
-                  height: 1.4,
-                ),
+          const SizedBox(height: 13),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Text(
+              notes.isEmpty ? 'No clinical notes added.' : notes,
+              style: TextStyle(
+                color: notes.isEmpty ? AppColors.mutedText : AppColors.text,
+                fontStyle: notes.isEmpty ? FontStyle.italic : FontStyle.normal,
+                height: 1.4,
               ),
             ),
-          ],
+          ),
         ],
       ),
     );
+  }
+}
+
+String _prettyFieldName(String key) {
+  switch (key) {
+    case 'value': return 'Value';
+    case 'result': return 'Result';
+    case 'details': return 'Details';
+    case 'observation': return 'Observation';
+    case 'action': return 'Action';
+    case 'tool': return 'Tool';
+    case 'method': return 'Method';
+    case 'percentile': return 'Percentile';
+    case 'systolic': return 'Systolic BP';
+    case 'diastolic': return 'Diastolic BP';
+    case 'stage': return 'Tanner stage';
+    case 'date': return 'Date';
+    case 'unit': return 'Unit';
+    case 'status': return 'Status';
+    default: return key;
   }
 }
 
@@ -554,9 +462,7 @@ class _InlineStatus extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 18, color: color),
-
         const SizedBox(width: 6),
-
         Text(
           text,
           style: TextStyle(

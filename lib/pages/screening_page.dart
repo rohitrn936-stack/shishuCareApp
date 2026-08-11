@@ -1,10 +1,7 @@
-import 'dart:typed_data';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:web_page/constants/app_colours.dart';
-import 'package:web_page/data/screening_checklists.dart';
+import 'package:web_page/data/preventive_checklists.dart';
 import 'package:web_page/models/screening_item.dart';
 import 'package:web_page/services/firestore_service.dart';
 import 'package:web_page/services/screening_service.dart';
@@ -25,16 +22,16 @@ class _ScreeningPageState extends State<ScreeningPage> {
   final screeningService = ScreeningService();
 
   late Future<DocumentSnapshot> childFuture;
+  final List<ScreeningItem> items = [];
+  int selectedVisitIndex = 0;
+  bool initialized = false;
+  bool saving = false;
 
-  List<ScreeningItem> ageBandItems = [];
-  List<ScreeningItem> universalItems = [];
-
-  String ageGroup = '';
-  bool itemsBuilt = false;
-  bool isSaving = false;
-
-  Uint8List? prescriptionBytes;
-  String? prescriptionFileName;
+  static const List<int> visitTargetDays = [
+    0, 4, 30, 42, 70, 98, 182, 274, 365, 456, 548, 730, 913, 1095,
+    1461, 1826, 2191, 2557, 2922, 3287, 3652, 4018, 4383, 4748, 5114,
+    5479, 5844, 6209, 6575, 7305, 7669,
+  ];
 
   @override
   void initState() {
@@ -42,399 +39,159 @@ class _ScreeningPageState extends State<ScreeningPage> {
     childFuture = firestoreService.getChild(widget.childID);
   }
 
-  String _getAgeGroup(int years, int months) {
-    if (years == 0 && months < 2) {
-      return 'Birth - 6 Weeks';
-    }
+  void _initialize(Map<String, dynamic> data) {
+    if (initialized) return;
 
-    if (years == 0 && months < 6) {
-      return '6 Weeks - 6 Months';
-    }
+    final dob = _readDob(data['dob']);
+    final ageDays = dob == null
+        ? ((data['ageYears'] as num?)?.toInt() ?? 0) * 365 +
+            ((data['ageMonths'] as num?)?.toInt() ?? 0) * 30
+        : DateTime.now().difference(dob).inDays;
 
-    if (years == 0) {
-      return '6 - 12 Months';
-    }
-
-    if (years < 2) {
-      return '1 - 2 Years';
-    }
-
-    if (years < 3) {
-      return '2 - 3 Years';
-    }
-
-    return '3 - 5 Years';
+    selectedVisitIndex = _recommendedVisitIndex(ageDays);
+    _loadVisitItems();
+    initialized = true;
   }
 
-  void _buildItems(Map<String, dynamic> data) {
-    if (itemsBuilt) return;
+  DateTime? _readDob(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
+  }
 
-    final int years = (data['ageYears'] as num?)?.toInt() ?? 0;
+  int _recommendedVisitIndex(int ageDays) {
+    if (ageDays <= 2) return 0;
+    if (ageDays >= visitTargetDays.last) return preventiveVisits.length - 1;
 
-    final int months = (data['ageMonths'] as num?)?.toInt() ?? 0;
+    var bestIndex = 0;
+    var bestDistance = (ageDays - visitTargetDays[0]).abs();
+    for (var i = 1; i < visitTargetDays.length; i++) {
+      final distance = (ageDays - visitTargetDays[i]).abs();
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
+    return bestIndex.clamp(0, preventiveVisits.length - 1).toInt();
+  }
 
-    ageGroup = _getAgeGroup(years, months);
-
-    final checklist = screeningChecklists[ageGroup] ?? [];
-
-    ageBandItems = checklist.map((entry) {
-      return ScreeningItem(
-        title: entry['title']!,
-        description: entry['description']!,
-        redFlagText: entry['redFlag']!,
-        unit: entry['unit'] ?? '',
+  void _loadVisitItems() {
+    items
+      ..clear()
+      ..addAll(
+        preventiveVisits[selectedVisitIndex]
+            .sections
+            .expand((section) => section.items)
+            .map((title) => ScreeningItem(title: title)),
       );
-    }).toList();
-
-    universalItems = universalRedFlags.map((text) {
-      return ScreeningItem(title: text, isUniversal: true);
-    }).toList();
-
-    itemsBuilt = true;
   }
 
-  List<ScreeningItem> get _allItems {
-    return [...ageBandItems, ...universalItems];
-  }
-
-  int get _activeFlagCount {
-    return _allItems.where((item) => item.redFlag).length;
-  }
-
-  double get _completionRatio {
-    if (ageBandItems.isEmpty) return 0;
-
-    final checkedCount = ageBandItems.where((item) => item.checked).length;
-
-    return checkedCount / ageBandItems.length;
-  }
-
-  Future<void> _pickPrescription() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
-      withData: true,
-    );
-
-    if (result == null || result.files.isEmpty) {
-      return;
+  String _sectionForItem(int itemIndex) {
+    var cursor = 0;
+    for (final section in preventiveVisits[selectedVisitIndex].sections) {
+      if (itemIndex < cursor + section.items.length) return section.title;
+      cursor += section.items.length;
     }
-
-    final file = result.files.first;
-
-    setState(() {
-      prescriptionBytes = file.bytes;
-      prescriptionFileName = file.name;
-    });
+    return 'Physical Examination';
   }
 
   Future<void> _saveScreening() async {
-    setState(() {
-      isSaving = true;
-    });
-
-    final allResults = [...ageBandItems, ...universalItems];
+    setState(() => saving = true);
 
     try {
+      final visit = preventiveVisits[selectedVisitIndex];
       await screeningService.saveScreening(
         childID: widget.childID,
-        ageGroup: ageGroup,
-        results: allResults.map((item) => item.toJson()).toList(),
-        prescriptionBytes: prescriptionBytes,
-        prescriptionFileName: prescriptionFileName,
+        ageGroup: visit.ageLabel,
+        visitNumber: visit.visitNumber,
+        results: items.map((item) => item.toJson()).toList(),
       );
 
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Screening saved successfully.')),
       );
-
       Navigator.pop(context);
     } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
-    } finally {
       if (mounted) {
-        setState(() {
-          isSaving = false;
-        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save screening: $e')),
+        );
       }
+    } finally {
+      if (mounted) setState(() => saving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F2FA),
-
       appBar: AppBar(
         title: const Text(
-          'New Screening',
+          'Preventive Screening',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
-        centerTitle: true,
-
-        actions: [
-          if (_activeFlagCount > 0)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade700,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '⚑ $_activeFlagCount flagged',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
-
       body: FutureBuilder<DocumentSnapshot>(
         future: childFuture,
-
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-
           if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
           }
-
           if (!snapshot.hasData || !snapshot.data!.exists) {
             return const Center(child: Text('Child not found.'));
           }
 
           final data = snapshot.data!.data() as Map<String, dynamic>;
-
-          _buildItems(data);
-
-          final checkedCount = _allItems.where((item) => item.checked).length;
-
-          final flagCount = _allItems.where((item) => item.redFlag).length;
-
-          final progress = _allItems.isEmpty
-              ? 0.0
-              : checkedCount / _allItems.length;
+          _initialize(data);
+          final visit = preventiveVisits[selectedVisitIndex];
+          final checkedCount = items.where((item) => item.checked).length;
+          final flagCount = items.where((item) => item.redFlag).length;
+          final progress = items.isEmpty ? 0.0 : checkedCount / items.length;
 
           return SafeArea(
             child: Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
-
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 980),
-
+                  constraints: const BoxConstraints(maxWidth: 1050),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-
                     children: [
-                      _screeningHeader(data),
-
+                      _screeningHeader(data, visit),
                       const SizedBox(height: 16),
-
-                      AppCard(
-                        padding: const EdgeInsets.all(20),
-
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.timeline_rounded,
-                                  color: AppColors.primary,
-                                ),
-
-                                const SizedBox(width: 10),
-
-                                const Expanded(
-                                  child: Text(
-                                    'Screening progress',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ),
-
-                                Text(
-                                  '$checkedCount/${_allItems.length}',
-                                  style: const TextStyle(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            const SizedBox(height: 13),
-
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(20),
-
-                              child: LinearProgressIndicator(
-                                value: progress,
-                                minHeight: 9,
-                                backgroundColor: AppColors.primary.withOpacity(
-                                  .10,
-                                ),
-                                color: AppColors.primary,
-                              ),
-                            ),
-
-                            const SizedBox(height: 14),
-
-                            Row(
-                              children: [
-                                _SummaryBadge(
-                                  icon: Icons.check_circle_rounded,
-                                  label: '$checkedCount checked',
-                                  color: AppColors.success,
-                                ),
-
-                                const SizedBox(width: 9),
-
-                                _SummaryBadge(
-                                  icon: Icons.flag_rounded,
-                                  label: '$flagCount red flags',
-                                  color: AppColors.danger,
-                                ),
-
-                                const Spacer(),
-
-                                Text(
-                                  '${_allItems.length} checks',
-                                  style: const TextStyle(
-                                    color: AppColors.mutedText,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-
+                      _visitSelector(),
+                      const SizedBox(height: 16),
+                      _progressCard(checkedCount, flagCount, progress),
                       const SizedBox(height: 22),
-
                       const AppSectionTitle(
-                        title: 'Age-based checklist',
+                        title: 'Complete every listed assessment',
                         subtitle:
-                            'Tap the status controls as you complete each assessment.',
+                            'Each checklist item has its own status, result fields and clinical notes. Measurements have dedicated units and fields.',
                         icon: Icons.fact_check_outlined,
                       ),
-
                       const SizedBox(height: 14),
-
-                      // AGE-BASED ITEMS
-                      for (final item in ageBandItems)
-                        ScreeningCard(item: item),
-
-                      // UNIVERSAL RED FLAGS
-                      if (universalItems.isNotEmpty) ...[
-                        const SizedBox(height: 22),
-
-                        const AppSectionTitle(
-                          title: 'Universal red flags',
-                          subtitle:
-                              'These warning signs should be considered regardless of age band.',
-                          icon: Icons.warning_amber_rounded,
-                        ),
-
-                        const SizedBox(height: 14),
-
-                        AppCard(
-                          padding: const EdgeInsets.all(16),
-
-                          child: Column(
-                            children: [
-                              ...universalItems.map(
-                                (item) => ScreeningCard(item: item),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-
-                      const SizedBox(height: 22),
-
-                      // PRESCRIPTION UPLOAD
-                      AppCard(
-                        padding: const EdgeInsets.all(16),
-
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.upload_file_rounded,
-                              color: AppColors.primary,
-                            ),
-
-                            const SizedBox(width: 12),
-
-                            Expanded(
-                              child: Text(
-                                prescriptionFileName ??
-                                    'No prescription attached',
-
-                                style: const TextStyle(
-                                  color: AppColors.mutedText,
-                                ),
-
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-
-                            TextButton.icon(
-                              onPressed: _pickPrescription,
-
-                              icon: const Icon(Icons.attach_file),
-
-                              label: const Text('Upload Prescription'),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 22),
-
-                      // SAVE BUTTON
+                      ...visit.sections.map((section) => _sectionCard(section)),
+                      const SizedBox(height: 10),
                       SizedBox(
                         width: double.infinity,
-
                         child: ElevatedButton.icon(
-                          onPressed: isSaving ? null : _saveScreening,
-
-                          icon: isSaving
+                          onPressed: saving ? null : _saveScreening,
+                          icon: saving
                               ? const SizedBox(
                                   width: 19,
                                   height: 19,
-
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
                                     color: Colors.white,
                                   ),
                                 )
                               : const Icon(Icons.save_rounded),
-
                           label: Text(
-                            isSaving ? 'Saving screening...' : 'Save screening',
+                            saving ? 'Saving screening...' : 'Save screening',
                           ),
                         ),
                       ),
@@ -449,63 +206,210 @@ class _ScreeningPageState extends State<ScreeningPage> {
     );
   }
 
-  Widget _screeningHeader(Map<String, dynamic> data) {
-    final years = data['ageYears'] ?? 0;
+  Widget _visitSelector() {
+    return AppCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(.08),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(
+                  Icons.event_note_rounded,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Checklist visit',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<int>(
+            value: selectedVisitIndex,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Age / visit',
+              prefixIcon: Icon(Icons.calendar_month_rounded),
+            ),
+            items: [
+              for (var i = 0; i < preventiveVisits.length; i++)
+                DropdownMenuItem(
+                  value: i,
+                  child: Text(
+                    'Visit ${preventiveVisits[i].visitNumber} • ${preventiveVisits[i].ageLabel}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (value) {
+              if (value == null || value == selectedVisitIndex) return;
+              setState(() {
+                selectedVisitIndex = value;
+                _loadVisitItems();
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
+  Widget _progressCard(int checkedCount, int flagCount, double progress) {
+    return AppCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.timeline_rounded, color: AppColors.primary),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Screening progress',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+              ),
+              Text(
+                '$checkedCount/${items.length}',
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 13),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 9,
+              backgroundColor: AppColors.primary.withOpacity(.10),
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _SummaryBadge(
+                icon: Icons.check_circle_rounded,
+                label: '$checkedCount completed',
+                color: AppColors.success,
+              ),
+              const SizedBox(width: 9),
+              _SummaryBadge(
+                icon: Icons.flag_rounded,
+                label: '$flagCount red flags',
+                color: AppColors.danger,
+              ),
+              const Spacer(),
+              Text(
+                '${items.length} checklist items',
+                style: const TextStyle(
+                  color: AppColors.mutedText,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionCard(PreventiveSection section) {
+    final startIndex = _itemStartIndex(section);
+    final sectionItems = items.sublist(startIndex, startIndex + section.items.length);
+    final completed = sectionItems.where((item) => item.checked).length;
+
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.zero,
+      child: ExpansionTile(
+        initiallyExpanded: section.title == 'Measurements & Growth',
+        tilePadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 5),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        leading: CircleAvatar(
+          backgroundColor: AppColors.primary.withOpacity(.08),
+          child: const Icon(Icons.playlist_add_check_rounded, color: AppColors.primary),
+        ),
+        title: Text(
+          section.title,
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+        subtitle: Text('${completed}/${section.items.length} completed'),
+        children: [
+          for (var i = 0; i < sectionItems.length; i++)
+            ScreeningCard(
+              item: sectionItems[i],
+              section: section.title,
+              onChanged: () => setState(() {}),
+            ),
+        ],
+      ),
+    );
+  }
+
+  int _itemStartIndex(PreventiveSection target) {
+    var index = 0;
+    for (final section in preventiveVisits[selectedVisitIndex].sections) {
+      if (identical(section, target)) return index;
+      index += section.items.length;
+    }
+    return index;
+  }
+
+  Widget _screeningHeader(Map<String, dynamic> data, PreventiveVisit visit) {
+    final years = data['ageYears'] ?? 0;
     final months = data['ageMonths'] ?? 0;
 
     return Container(
       width: double.infinity,
-
       padding: const EdgeInsets.all(24),
-
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [AppColors.primaryDark, AppColors.primary],
-
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-
         borderRadius: BorderRadius.circular(24),
       ),
-
       child: Row(
         children: [
           const CircleAvatar(
             radius: 30,
-
             backgroundColor: Colors.white24,
-
-            child: Icon(
-              Icons.child_care_rounded,
-              color: Colors.white,
-              size: 34,
-            ),
+            child: Icon(Icons.child_care_rounded, color: Colors.white, size: 34),
           ),
-
           const SizedBox(width: 14),
-
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-
               children: [
                 Text(
                   data['childName']?.toString() ?? 'Child',
-
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-
                 const SizedBox(height: 5),
-
                 Text(
                   '${data['childID']} • $years years $months months',
-
                   style: const TextStyle(
                     color: Colors.white70,
                     fontWeight: FontWeight.w600,
@@ -514,21 +418,15 @@ class _ScreeningPageState extends State<ScreeningPage> {
               ],
             ),
           ),
-
-          const SizedBox(width: 12),
-
           Container(
+            constraints: const BoxConstraints(maxWidth: 230),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(.14),
-
               borderRadius: BorderRadius.circular(14),
             ),
-
             child: Text(
-              ageGroup,
-
+              'Visit ${visit.visitNumber} • ${visit.ageLabel}',
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w800,
@@ -557,23 +455,17 @@ class _SummaryBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-
       decoration: BoxDecoration(
         color: color.withOpacity(.08),
         borderRadius: BorderRadius.circular(30),
       ),
-
       child: Row(
         mainAxisSize: MainAxisSize.min,
-
         children: [
           Icon(icon, size: 15, color: color),
-
           const SizedBox(width: 5),
-
           Text(
             label,
-
             style: TextStyle(
               color: color,
               fontSize: 12,
