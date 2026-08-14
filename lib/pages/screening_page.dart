@@ -7,8 +7,8 @@ import 'package:web_page/constants/app_colours.dart';
 import 'package:web_page/data/preventive_checklists.dart';
 import 'package:web_page/models/screening_item.dart';
 import 'package:web_page/services/firestore_service.dart';
-import 'package:web_page/services/google_drive_service.dart';
 import 'package:web_page/services/screening_service.dart';
+import 'package:web_page/services/storage_service.dart';
 import 'package:web_page/widgets/app_card.dart';
 import 'package:web_page/widgets/screening_card.dart';
 
@@ -24,7 +24,7 @@ class ScreeningPage extends StatefulWidget {
 class _ScreeningPageState extends State<ScreeningPage> {
   final firestoreService = FirestoreService();
   final screeningService = ScreeningService();
-  final googleDriveService = GoogleDriveService();
+  final storageService = StorageService();
 
   late Future<DocumentSnapshot> childFuture;
 
@@ -41,11 +41,6 @@ class _ScreeningPageState extends State<ScreeningPage> {
 
   Uint8List? prescriptionBytes;
   String? prescriptionFileName;
-
-  // Google Drive file ID returned after successful upload.
-  String? prescriptionDriveFileId;
-
-  bool uploadingPrescription = false;
 
   // --------------------------------------------------
   // Visit configuration
@@ -135,7 +130,6 @@ class _ScreeningPageState extends State<ScreeningPage> {
     }
 
     var bestIndex = 0;
-
     var bestDistance = (ageDays - visitTargetDays[0]).abs();
 
     for (var i = 1; i < visitTargetDays.length; i++) {
@@ -161,32 +155,10 @@ class _ScreeningPageState extends State<ScreeningPage> {
   }
 
   // --------------------------------------------------
-  // Section helper
-  // --------------------------------------------------
-
-  String _sectionForItem(int itemIndex) {
-    var cursor = 0;
-
-    for (final section in preventiveVisits[selectedVisitIndex].sections) {
-      if (itemIndex < cursor + section.items.length) {
-        return section.title;
-      }
-
-      cursor += section.items.length;
-    }
-
-    return 'Physical Examination';
-  }
-
-  // --------------------------------------------------
-  // Pick + upload prescription to Google Drive
+  // Prescription picker
   // --------------------------------------------------
 
   Future<void> _pickPrescription() async {
-    if (uploadingPrescription) {
-      return;
-    }
-
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
@@ -209,68 +181,25 @@ class _ScreeningPageState extends State<ScreeningPage> {
       return;
     }
 
-    final bytes = file.bytes!;
-
-    String mimeType = 'application/octet-stream';
-
-    final extension = file.extension?.toLowerCase();
-
-    if (extension == 'jpg' || extension == 'jpeg') {
-      mimeType = 'image/jpeg';
-    } else if (extension == 'png') {
-      mimeType = 'image/png';
-    } else if (extension == 'pdf') {
-      mimeType = 'application/pdf';
-    }
-
     setState(() {
-      uploadingPrescription = true;
+      prescriptionBytes = file.bytes;
+      prescriptionFileName = file.name;
     });
 
-    try {
-      // --------------------------------------------------
-      // Upload the selected file to Google Drive.
-      // --------------------------------------------------
+    if (!mounted) return;
 
-      final driveFileId = await googleDriveService.uploadFile(
-        fileBytes: bytes,
-        fileName: file.name,
-        mimeType: mimeType,
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        prescriptionBytes = bytes;
-        prescriptionFileName = file.name;
-        prescriptionDriveFileId = driveFileId;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Prescription uploaded to Google Drive successfully.'),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Prescription upload failed: $e')));
-    } finally {
-      if (mounted) {
-        setState(() {
-          uploadingPrescription = false;
-        });
-      }
-    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('${file.name} selected.')));
   }
 
   // --------------------------------------------------
-  // Save screening
+  // Save screening + prescription
   // --------------------------------------------------
 
   Future<void> _saveScreening() async {
+    if (saving) return;
+
     setState(() {
       saving = true;
     });
@@ -278,17 +207,51 @@ class _ScreeningPageState extends State<ScreeningPage> {
     try {
       final visit = preventiveVisits[selectedVisitIndex];
 
-      await screeningService.saveScreening(
+      // --------------------------------------------------
+      // 1. Create the screening document first.
+      // --------------------------------------------------
+
+      final screeningID = await screeningService.saveScreening(
         childID: widget.childID,
         ageGroup: visit.ageLabel,
         visitNumber: visit.visitNumber,
         results: items.map((item) => item.toJson()).toList(),
       );
 
+      // --------------------------------------------------
+      // 2. Upload prescription if one was selected.
+      // --------------------------------------------------
+
+      if (prescriptionBytes != null && prescriptionFileName != null) {
+        final prescriptionUrl = await storageService.uploadPrescription(
+          childID: widget.childID,
+          screeningID: screeningID,
+          fileBytes: prescriptionBytes!,
+          fileName: prescriptionFileName!,
+        );
+
+        // --------------------------------------------------
+        // 3. Save the Storage URL in the screening document.
+        // --------------------------------------------------
+
+        await screeningService.addPrescriptionUrl(
+          childID: widget.childID,
+          screeningID: screeningID,
+          prescriptionUrl: prescriptionUrl,
+          prescriptionFileName: prescriptionFileName!,
+        );
+      }
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Screening saved successfully.')),
+        SnackBar(
+          content: Text(
+            prescriptionBytes != null
+                ? 'Screening and prescription saved successfully.'
+                : 'Screening saved successfully.',
+          ),
+        ),
       );
 
       Navigator.pop(context);
@@ -388,9 +351,7 @@ class _ScreeningPageState extends State<ScreeningPage> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: saving || uploadingPrescription
-                              ? null
-                              : _saveScreening,
+                          onPressed: saving ? null : _saveScreening,
                           icon: saving
                               ? const SizedBox(
                                   width: 19,
@@ -455,9 +416,7 @@ class _ScreeningPageState extends State<ScreeningPage> {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-
                     SizedBox(height: 3),
-
                     Text(
                       'Attach a prescription image or PDF.',
                       style: TextStyle(
@@ -489,40 +448,21 @@ class _ScreeningPageState extends State<ScreeningPage> {
                   const SizedBox(width: 10),
 
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          prescriptionFileName ?? 'Prescription selected',
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-
-                        if (prescriptionDriveFileId != null)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 3),
-                            child: Text(
-                              'Uploaded to Google Drive',
-                              style: TextStyle(
-                                color: Colors.green,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                      ],
+                    child: Text(
+                      prescriptionFileName ?? 'Prescription selected',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
 
                   IconButton(
                     tooltip: 'Remove prescription',
-                    onPressed: uploadingPrescription
+                    onPressed: saving
                         ? null
                         : () {
                             setState(() {
                               prescriptionBytes = null;
                               prescriptionFileName = null;
-                              prescriptionDriveFileId = null;
                             });
                           },
                     icon: const Icon(Icons.close),
@@ -536,18 +476,10 @@ class _ScreeningPageState extends State<ScreeningPage> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: uploadingPrescription ? null : _pickPrescription,
-              icon: uploadingPrescription
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.upload_file_rounded),
+              onPressed: saving ? null : _pickPrescription,
+              icon: const Icon(Icons.upload_file_rounded),
               label: Text(
-                uploadingPrescription
-                    ? 'Uploading to Google Drive...'
-                    : prescriptionBytes == null
+                prescriptionBytes == null
                     ? 'Upload Prescription'
                     : 'Change Prescription',
               ),

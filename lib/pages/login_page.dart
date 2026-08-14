@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:web_page/constants/app_colours.dart';
 import 'package:web_page/pages/portal_page.dart';
@@ -59,10 +58,7 @@ class _LoginPageState extends State<LoginPage> {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-      ),
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
     );
   }
 
@@ -80,8 +76,9 @@ class _LoginPageState extends State<LoginPage> {
     return Padding(
       padding: EdgeInsets.all(compact ? 4 : 26),
       child: Column(
-        crossAxisAlignment:
-            compact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+        crossAxisAlignment: compact
+            ? CrossAxisAlignment.center
+            : CrossAxisAlignment.start,
         children: [
           Container(
             width: 76,
@@ -215,10 +212,7 @@ class _LoginPageState extends State<LoginPage> {
           const Center(
             child: Text(
               'Secure clinical workspace • ShishuCare',
-              style: TextStyle(
-                color: AppColors.mutedText,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: AppColors.mutedText, fontSize: 12),
             ),
           ),
         ],
