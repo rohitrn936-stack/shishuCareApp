@@ -36,6 +36,7 @@ class FirestoreService {
   Future<String> registerChild({
     required String childName,
     required String guardianName,
+    String parentType = 'Guardian',
     required String phone,
     required String village,
     required String gender,
@@ -48,6 +49,7 @@ class FirestoreService {
     await _firestore.collection("children").doc(childID).set({
       "childID": childID,
       "childName": childName,
+      "parentType": parentType,
       "guardianName": guardianName,
       "phone": phone,
       "village": village,
@@ -99,5 +101,35 @@ class FirestoreService {
         .where("childName", isGreaterThanOrEqualTo: childName)
         .where("childName", isLessThan: "$childName\uf8ff")
         .get();
+  }
+
+  // -------------------------------
+  // Vaccinations
+  // -------------------------------
+  Future<DocumentSnapshot> getVaccinations(String childID) async {
+    return await _firestore
+        .collection("children")
+        .doc(childID)
+        .collection("vaccinations")
+        .doc("status")
+        .get();
+  }
+
+  Future<void> updateVaccinationStatus({
+    required String childID,
+    required String vaccineId,
+    required bool isDone,
+  }) async {
+    await _firestore
+        .collection("children")
+        .doc(childID)
+        .collection("vaccinations")
+        .doc("status")
+        .set({
+      vaccineId: {
+        "completed": isDone,
+        "date": isDone ? Timestamp.now() : null,
+      }
+    }, SetOptions(merge: true));
   }
 }

@@ -23,6 +23,7 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
 
   DateTime? selectedDate;
   String? selectedGender;
+  String selectedParentType = 'Mother';
   int calculatedYears = 0;
   int calculatedMonths = 0;
   bool saving = false;
@@ -91,6 +92,7 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
     try {
       final childID = await firestoreService.registerChild(
         childName: childNameController.text.trim(),
+        parentType: selectedParentType,
         guardianName: guardianController.text.trim(),
         phone: phoneController.text.trim(),
         village: villageController.text.trim(),
@@ -101,12 +103,16 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
       );
 
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ChildDetailPage(childID: childID),
-        ),
-      );
+      Future.delayed(Duration.zero, () {
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChildDetailPage(childID: childID),
+            ),
+          );
+        }
+      });
     } catch (e) {
       if (mounted) _showMessage('Registration failed: $e');
     } finally {
@@ -188,20 +194,38 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
                           ),
                           const SizedBox(height: 30),
                           const AppSectionTitle(
-                            title: 'Guardian & contact',
+                            title: 'Parent / Guardian & contact',
                             subtitle:
-                                'These details help the care team identify the household.',
+                                'Select relationship and enter contact details.',
                             icon: Icons.family_restroom_rounded,
                           ),
                           const SizedBox(height: 22),
+                          DropdownButtonFormField<String>(
+                            value: selectedParentType,
+                            decoration: const InputDecoration(
+                              labelText: 'Parent / Guardian Type',
+                              prefixIcon: Icon(Icons.people_outline_rounded),
+                            ),
+                            items: const [
+                              DropdownMenuItem(value: 'Father', child: Text('Father')),
+                              DropdownMenuItem(value: 'Mother', child: Text('Mother')),
+                              DropdownMenuItem(value: 'Guardian', child: Text('Guardian')),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() => selectedParentType = val);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 16),
                           _field(
                             controller: guardianController,
-                            label: 'Guardian name',
-                            hint: 'Parent / guardian full name',
+                            label: '$selectedParentType name',
+                            hint: 'Enter $selectedParentType\'s full name',
                             icon: Icons.family_restroom_outlined,
                             validator: (value) =>
                                 value == null || value.trim().isEmpty
-                                    ? 'Please enter the guardian\'s name'
+                                    ? 'Please enter the $selectedParentType\'s name'
                                     : null,
                           ),
                           const SizedBox(height: 16),

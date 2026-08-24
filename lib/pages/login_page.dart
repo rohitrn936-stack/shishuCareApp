@@ -204,10 +204,14 @@ class _LoginPageState extends State<LoginPage> {
               icon: const Icon(Icons.arrow_forward_rounded),
               label: const Text('Enter workspace'),
               onPressed: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const PortalPage()),
-                );
+                Future.delayed(Duration.zero, () {
+                  if (mounted) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => const PortalPage()),
+                    );
+                  }
+                });
               },
             ),
           ),
