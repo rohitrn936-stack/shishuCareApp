@@ -83,27 +83,6 @@ class _LoginPageState extends State<LoginPage> {
         crossAxisAlignment:
             compact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 76,
-            height: 76,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x30673AB7),
-                  blurRadius: 25,
-                  offset: Offset(0, 12),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.child_care_rounded,
-              color: Colors.white,
-              size: 43,
-            ),
-          ),
-          const SizedBox(height: 24),
           Text(
             'ShishuCare',
             textAlign: compact ? TextAlign.center : TextAlign.left,

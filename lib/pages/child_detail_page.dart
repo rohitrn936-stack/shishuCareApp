@@ -314,6 +314,9 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
   }
 
   Widget _profileHeader(Map<String, dynamic> data, String parentType) {
+    final childName = data['childName']?.toString().trim() ?? '';
+    final initial = childName.isNotEmpty ? childName[0].toUpperCase() : 'C';
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -325,13 +328,16 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
       ),
       child: Row(
         children: [
-          const CircleAvatar(
+          CircleAvatar(
             radius: 34,
             backgroundColor: Colors.white24,
-            child: Icon(
-              Icons.child_care_rounded,
-              size: 38,
-              color: Colors.white,
+            child: Text(
+              initial,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 30,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           const SizedBox(width: 16),

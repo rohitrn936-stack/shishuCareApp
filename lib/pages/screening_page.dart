@@ -450,40 +450,36 @@ class _ScreeningPageState extends State<ScreeningPage> {
   }
 
   Widget _screeningHeader(Map<String, dynamic> data) {
+    final childName = data['childName']?.toString().trim() ?? '';
+    final initial = childName.isNotEmpty ? childName[0].toUpperCase() : 'C';
     final years = data['ageYears'] ?? 0;
-
     final months = data['ageMonths'] ?? 0;
 
     return Container(
       width: double.infinity,
-
       padding: const EdgeInsets.all(24),
-
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [AppColors.primaryDark, AppColors.primary],
-
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-
         borderRadius: BorderRadius.circular(24),
       ),
-
       child: Row(
         children: [
-          const CircleAvatar(
+          CircleAvatar(
             radius: 30,
-
             backgroundColor: Colors.white24,
-
-            child: Icon(
-              Icons.child_care_rounded,
-              color: Colors.white,
-              size: 34,
+            child: Text(
+              initial,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
-
           const SizedBox(width: 14),
 
           Expanded(

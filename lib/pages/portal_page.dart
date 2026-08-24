@@ -15,15 +15,9 @@ class PortalPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 22,
-        title: const Row(
-          children: [
-            Icon(Icons.child_care_rounded),
-            SizedBox(width: 10),
-            Text(
-              'ShishuCare',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-          ],
+        title: const Text(
+          'ShishuCare',
+          style: TextStyle(fontWeight: FontWeight.w800),
         ),
         actions: [
           IconButton(

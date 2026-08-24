@@ -157,7 +157,7 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
                             title: 'Child information',
                             subtitle:
                                 'Enter the basic details used to create the child profile.',
-                            icon: Icons.child_care_rounded,
+                            icon: Icons.person_add_alt_1_rounded,
                           ),
                           const SizedBox(height: 22),
                           _field(

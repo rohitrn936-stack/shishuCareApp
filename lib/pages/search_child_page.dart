@@ -239,6 +239,9 @@ class _ChildResultCardState extends State<_ChildResultCard> {
   @override
   Widget build(BuildContext context) {
     final child = widget.child;
+    final childName = child['childName']?.toString().trim() ?? '';
+    final initial = childName.isNotEmpty ? childName[0].toUpperCase() : 'C';
+
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => hovered = true),
@@ -268,9 +271,13 @@ class _ChildResultCardState extends State<_ChildResultCard> {
               CircleAvatar(
                 radius: 28,
                 backgroundColor: AppColors.primary.withOpacity(.10),
-                child: const Icon(
-                  Icons.child_care_rounded,
-                  color: AppColors.primary,
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                  ),
                 ),
               ),
               const SizedBox(width: 16),
