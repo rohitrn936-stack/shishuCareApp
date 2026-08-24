@@ -6,6 +6,7 @@ import 'package:web_page/pages/screening_page.dart';
 import 'package:web_page/pages/screening_report_page.dart';
 import 'package:web_page/services/firestore_service.dart';
 import 'package:web_page/widgets/app_card.dart';
+import 'package:web_page/widgets/growth_chart.dart';
 
 class ChildDetailPage extends StatefulWidget {
   final String childID;
@@ -196,7 +197,7 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
                       const SizedBox(height: 18),
 
                       // 3. GROWTH CHART SECTION
-                      _growthChartSection(),
+                      _growthChartSection(data),
 
                       const SizedBox(height: 18),
 
@@ -362,14 +363,14 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
     );
   }
 
-  Widget _growthChartSection() {
+  Widget _growthChartSection(Map<String, dynamic> childData) {
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const AppSectionTitle(
             title: 'Growth Chart',
-            subtitle: 'Screening growth progression visual chart.',
+            subtitle: 'Screening growth progression visual WHO chart.',
             icon: Icons.show_chart_rounded,
           ),
           const SizedBox(height: 16),
@@ -377,66 +378,13 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
             future: screeningsFuture,
             builder: (context, snapshot) {
               final docs = snapshot.data?.docs ?? [];
-              final count = docs.length;
 
-              return Container(
-                height: 160,
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.query_stats_rounded,
-                            color: AppColors.primary, size: 28),
-                        const SizedBox(width: 10),
-                        Text(
-                          '$count Screening Record(s) Logged',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: AppColors.text,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _growthStatChip('WHO Growth Standard', 'Normal Band', Colors.green),
-                        _growthStatChip('Growth Status', count > 0 ? 'Recorded' : 'Pending Visit', AppColors.primary),
-                      ],
-                    ),
-                  ],
-                ),
+              return GrowthChartWidget(
+                screeningsDocs: docs,
+                childData: childData,
               );
             },
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _growthStatChip(String title, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: [
-          Text(title, style: TextStyle(color: AppColors.mutedText, fontSize: 11, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 2),
-          Text(value, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.bold)),
         ],
       ),
     );
