@@ -2,7 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 import 'package:web_page/constants/app_colours.dart';
+import 'package:web_page/pages/screening_page.dart';
 import 'package:web_page/services/pdf_service.dart';
+import 'package:web_page/services/screening_service.dart';
+import 'package:web_page/utils/visit_numbering.dart';
 import 'package:web_page/widgets/app_card.dart';
 
 class ScreeningReportPage extends StatelessWidget {
@@ -28,6 +31,53 @@ class ScreeningReportPage extends StatelessWidget {
     final int completed = (data['completedItems'] as num?)?.toInt() ?? 0;
 
     final int redFlags = (data['redFlagCount'] as num?)?.toInt() ?? 0;
+
+    Future<void> confirmDelete(BuildContext context) async {
+      final ageGroup = data['ageGroup']?.toString() ?? 'Screening';
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.delete_outline_rounded, color: AppColors.danger),
+              SizedBox(width: 8),
+              Text('Delete Screening?'),
+            ],
+          ),
+          content: Text(
+            'Are you sure you want to delete this screening record for "$ageGroup"? This action cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.danger,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm == true) {
+        final screeningService = ScreeningService();
+        await screeningService.deleteScreening(
+          childID: childID,
+          screeningID: screening.id,
+        );
+
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Screening record deleted successfully.')),
+        );
+        Navigator.pop(context);
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -63,6 +113,24 @@ class ScreeningReportPage extends StatelessWidget {
             tooltip: 'Export PDF',
             onPressed: () => _exportPdf(context, data, results, date),
             icon: const Icon(Icons.picture_as_pdf_rounded),
+          ),
+          IconButton(
+            tooltip: 'Edit screening',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ScreeningPage(
+                  childID: childID,
+                  existingScreening: screening,
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.edit_outlined, color: AppColors.primary),
+          ),
+          IconButton(
+            tooltip: 'Delete screening',
+            onPressed: () => confirmDelete(context),
+            icon: const Icon(Icons.delete_outline_rounded, color: AppColors.danger),
           ),
           const SizedBox(width: 8),
         ],
@@ -158,7 +226,8 @@ class ScreeningReportPage extends StatelessWidget {
           const SizedBox(height: 6),
 
           Text(
-            data['ageGroup']?.toString() ?? 'Screening',
+            VisitNumberingHelper.cleanAgeGroup(
+                data['ageGroup']?.toString() ?? 'Screening'),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 28,

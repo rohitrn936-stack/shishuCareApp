@@ -129,15 +129,23 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
     List<GrowthDataPoint> list = [];
 
     final ageGroupMonths = <String, double>{
+      'Birth (Newborn, Pre-Discharge)': 0.0,
       'At Birth': 0.0,
+      '3 - 5 Days': 0.1,
+      '1 Month': 1.0,
       '6 Weeks': 1.5,
       '10 Weeks': 2.5,
       '14 Weeks': 3.5,
       '6 Months': 6.0,
       '9 Months': 9.0,
+      '12 Months (1 Year)': 12.0,
       '12 Months': 12.0,
+      '15 Months': 15.0,
+      '18 Months': 18.0,
       '16-24 Months': 18.0,
+      '24 Months (2 Years)': 24.0,
       '2 Years': 24.0,
+      '30 Months (2.5 Years)': 30.0,
       '3 Years': 36.0,
       '4 Years': 48.0,
       '5 Years': 60.0,
@@ -157,10 +165,33 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
           dateStr = '${dt.day}/${dt.month}/${dt.year}';
         }
 
-        double w = (data['weight'] as num?)?.toDouble() ??
-            WhoGrowthStandard.getWeightPercentiles(m)[1];
-        double h = (data['height'] as num?)?.toDouble() ??
-            WhoGrowthStandard.getHeightPercentiles(m)[1];
+        double? w = (data['weight'] as num?)?.toDouble();
+        double? h = (data['height'] as num?)?.toDouble();
+
+        // Extract from results if top-level fields are absent
+        if ((w == null || h == null) && data['results'] is List) {
+          final results = data['results'] as List;
+          for (final item in results) {
+            if (item is Map) {
+              final title = (item['title'] as String? ?? '').toLowerCase();
+              final valStr = item['value'] as String? ?? '';
+              final match = RegExp(r'([0-9]+(?:\.[0-9]+)?)').firstMatch(valStr);
+              if (match != null) {
+                final valNum = double.tryParse(match.group(1)!);
+                if (valNum != null && valNum > 0) {
+                  if (w == null && (title.contains('weight') || title.contains('wt'))) {
+                    w = valNum;
+                  } else if (h == null && (title.contains('length') || title.contains('height'))) {
+                    h = valNum;
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        w ??= WhoGrowthStandard.getWeightPercentiles(m)[1];
+        h ??= WhoGrowthStandard.getHeightPercentiles(m)[1];
 
         list.add(GrowthDataPoint(
           months: m,
@@ -333,41 +364,20 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              return GestureDetector(
-                onTapDown: (details) {
-                  final double leftMargin = 38.0;
-                  final double rightMargin = 16.0;
-                  final double chartW =
-                      constraints.maxWidth - leftMargin - rightMargin;
-
-                  double dx(double m) =>
-                      leftMargin + (m / _maxMonths) * chartW;
-
-                  int nearestIdx = -1;
-                  double minDistance = double.infinity;
-
-                  for (int i = 0; i < _points.length; i++) {
-                    double px = dx(_points[i].months);
-                    double dist = (details.localPosition.dx - px).abs();
-                    if (dist < minDistance && dist < 35.0) {
-                      minDistance = dist;
-                      nearestIdx = i;
-                    }
-                  }
-
-                  if (nearestIdx != -1) {
-                    setState(() {
-                      _selectedIndex = nearestIdx;
-                    });
-                  }
-                },
-                child: CustomPaint(
-                  size: Size(constraints.maxWidth, constraints.maxHeight),
-                  painter: GrowthChartPainter(
-                    metric: _activeMetric,
-                    points: _points,
-                    selectedIndex: _selectedIndex,
-                    maxMonths: _maxMonths,
+              return MouseRegion(
+                cursor: SystemMouseCursors.click,
+                onHover: (event) => _handleHoverOrTap(event.localPosition, constraints.maxWidth),
+                child: GestureDetector(
+                  onTapDown: (details) => _handleHoverOrTap(details.localPosition, constraints.maxWidth),
+                  onPanUpdate: (details) => _handleHoverOrTap(details.localPosition, constraints.maxWidth),
+                  child: CustomPaint(
+                    size: Size(constraints.maxWidth, constraints.maxHeight),
+                    painter: GrowthChartPainter(
+                      metric: _activeMetric,
+                      points: _points,
+                      selectedIndex: _selectedIndex,
+                      maxMonths: _maxMonths,
+                    ),
                   ),
                 ),
               );
@@ -382,6 +392,34 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
           _buildPointDetailCard(_points[_selectedIndex!]),
       ],
     );
+  }
+
+  void _handleHoverOrTap(Offset localPosition, double width) {
+    final double leftMargin = 48.0;
+    final double rightMargin = 16.0;
+    final double chartW = width - leftMargin - rightMargin;
+
+    if (chartW <= 0 || _points.isEmpty) return;
+
+    double dx(double m) => leftMargin + (m / _maxMonths) * chartW;
+
+    int nearestIdx = -1;
+    double minDistance = double.infinity;
+
+    for (int i = 0; i < _points.length; i++) {
+      double px = dx(_points[i].months);
+      double dist = (localPosition.dx - px).abs();
+      if (dist < minDistance && dist < 45.0) {
+        minDistance = dist;
+        nearestIdx = i;
+      }
+    }
+
+    if (nearestIdx != -1 && nearestIdx != _selectedIndex) {
+      setState(() {
+        _selectedIndex = nearestIdx;
+      });
+    }
   }
 
   Widget _metricBtn({
@@ -576,17 +614,25 @@ class GrowthChartPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double leftMargin = 38.0;
+    final double leftMargin = 48.0;
     final double rightMargin = 16.0;
-    final double topMargin = 18.0;
+    final double topMargin = 22.0;
     final double bottomMargin = 28.0;
 
     final double chartW = size.width - leftMargin - rightMargin;
     final double chartH = size.height - topMargin - bottomMargin;
 
     final bool isWeight = metric == ChartMetric.weight;
-    final double minY = isWeight ? 0.0 : 40.0;
-    final double maxY = isWeight ? 22.0 : 120.0;
+    final double minY = isWeight ? 0.0 : 30.0;
+
+    double maxValInPoints = 0.0;
+    if (points.isNotEmpty) {
+      maxValInPoints = points
+          .map((p) => isWeight ? p.weightKg : p.heightCm)
+          .reduce(max);
+    }
+    final double defaultMaxY = isWeight ? 22.0 : 120.0;
+    final double maxY = max(defaultMaxY, maxValInPoints * 1.15);
 
     double dx(double m) => leftMargin + (m / maxMonths) * chartW;
     double dy(double v) =>
@@ -606,9 +652,13 @@ class GrowthChartPainter extends CustomPainter {
       canvas.drawLine(
           Offset(leftMargin, y), Offset(size.width - rightMargin, y), gridPaint);
 
+      final labelStr = isWeight
+          ? '${val >= 100 ? val.toInt() : val.toStringAsFixed(val % 1 == 0 ? 0 : 1)}kg'
+          : '${val.toInt()}cm';
+
       final tp = TextPainter(
         text: TextSpan(
-          text: isWeight ? '${val.toInt()}kg' : '${val.toInt()}cm',
+          text: labelStr,
           style: const TextStyle(
             color: AppColors.mutedText,
             fontSize: 10,
@@ -755,7 +805,7 @@ class GrowthChartPainter extends CustomPainter {
         ..style = PaintingStyle.stroke;
       canvas.drawPath(childPath, childLinePaint);
 
-      // Points
+      // Draw Points
       for (int i = 0; i < points.length; i++) {
         double val = isWeight ? points[i].weightKg : points[i].heightCm;
         double x = dx(points[i].months);
@@ -787,6 +837,80 @@ class GrowthChartPainter extends CustomPainter {
           canvas.drawCircle(
               Offset(x, y), 1.5, Paint()..color = Colors.white);
         }
+      }
+
+      // Draw Interactive Hover Floating Tooltip
+      if (selectedIndex != null &&
+          selectedIndex! >= 0 &&
+          selectedIndex! < points.length) {
+        final pt = points[selectedIndex!];
+        double val = isWeight ? pt.weightKg : pt.heightCm;
+        double x = dx(pt.months);
+        double y = dy(val);
+
+        final valStr = isWeight
+            ? '${pt.weightKg.toStringAsFixed(1)} kg'
+            : '${pt.heightCm.toStringAsFixed(0)} cm';
+        final titleText =
+            pt.dateStr.isNotEmpty ? '${pt.label} (${pt.dateStr})' : pt.label;
+
+        final TextSpan span = TextSpan(
+          children: [
+            TextSpan(
+              text: '$titleText\n',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            TextSpan(
+              text: valStr,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        );
+
+        final TextPainter tp = TextPainter(
+          text: span,
+          textAlign: TextAlign.center,
+          textDirection: TextDirection.ltr,
+        )..layout();
+
+        final double tooltipW = tp.width + 16.0;
+        final double tooltipH = tp.height + 10.0;
+
+        double tooltipX = x - tooltipW / 2;
+        tooltipX =
+            tooltipX.clamp(leftMargin, size.width - rightMargin - tooltipW);
+
+        double tooltipY = y - tooltipH - 10.0;
+        if (tooltipY < topMargin) {
+          tooltipY = y + 12.0;
+        }
+
+        final RRect tooltipRRect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(tooltipX, tooltipY, tooltipW, tooltipH),
+          const Radius.circular(8.0),
+        );
+
+        canvas.drawRRect(
+          tooltipRRect.shift(const Offset(0, 2)),
+          Paint()..color = Colors.black.withOpacity(0.25),
+        );
+        canvas.drawRRect(
+          tooltipRRect,
+          Paint()..color = AppColors.primaryDark,
+        );
+
+        tp.paint(
+          canvas,
+          Offset(tooltipX + 8.0, tooltipY + 5.0),
+        );
       }
     }
   }

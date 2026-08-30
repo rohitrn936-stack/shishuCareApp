@@ -37,13 +37,11 @@ class _SearchChildPageState extends State<SearchChildPage> {
     });
 
     try {
-      final snapshot = query.toUpperCase().startsWith('CH')
-          ? await firestoreService.searchByChildID(query.toUpperCase())
-          : await firestoreService.searchByChildName(query);
+      final results = await firestoreService.searchChildren(query);
 
       if (!mounted) return;
       setState(() {
-        searchResults = snapshot.docs;
+        searchResults = results;
         isLoading = false;
         if (searchResults.isEmpty) {
           errorMessage = 'No child profiles matched your search.';

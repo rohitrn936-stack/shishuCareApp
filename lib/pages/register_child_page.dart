@@ -1,4 +1,5 @@
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:web_page/constants/app_colours.dart';
@@ -7,7 +8,9 @@ import 'package:web_page/services/firestore_service.dart';
 import 'package:web_page/widgets/app_card.dart';
 
 class RegisterChildPage extends StatefulWidget {
-  const RegisterChildPage({super.key});
+  final DocumentSnapshot? existingChild;
+
+  const RegisterChildPage({super.key, this.existingChild});
 
   @override
   State<RegisterChildPage> createState() => _RegisterChildPageState();
@@ -31,6 +34,35 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
   final FirestoreService firestoreService = FirestoreService();
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.existingChild != null) {
+      final data = widget.existingChild!.data() as Map<String, dynamic>;
+      childNameController.text = data['childName']?.toString() ?? '';
+      guardianController.text = data['guardianName']?.toString() ?? '';
+      phoneController.text = data['phone']?.toString() ?? '';
+      villageController.text = data['village']?.toString() ?? '';
+      selectedGender = data['gender']?.toString();
+      selectedParentType = data['parentType']?.toString() ?? 'Mother';
+      if (data['dob'] is Timestamp) {
+        selectedDate = (data['dob'] as Timestamp).toDate();
+        dobController.text =
+            '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}';
+
+        final today = DateTime.now();
+        var years = today.year - selectedDate!.year;
+        var months = today.month - selectedDate!.month;
+        if (months < 0) {
+          years--;
+          months += 12;
+        }
+        calculatedYears = years;
+        calculatedMonths = months;
+      }
+    }
+  }
+
+  @override
   void dispose() {
     childNameController.dispose();
     guardianController.dispose();
@@ -43,7 +75,7 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
   Future<void> _pickDate() async {
     final pickedDate = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
+      initialDate: selectedDate ?? DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
       helpText: 'Select child date of birth',
@@ -87,34 +119,63 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
       return;
     }
 
+    final today = DateTime.now();
+    if (selectedDate!.isAfter(today)) {
+      _showMessage('Error: Date of birth cannot be in the future.');
+      return;
+    }
+    if (selectedDate!.year > today.year) {
+      _showMessage('Error: Date of birth year cannot be greater than current year.');
+      return;
+    }
+
     setState(() => saving = true);
 
     try {
-      final childID = await firestoreService.registerChild(
-        childName: childNameController.text.trim(),
-        parentType: selectedParentType,
-        guardianName: guardianController.text.trim(),
-        phone: phoneController.text.trim(),
-        village: villageController.text.trim(),
-        gender: selectedGender!,
-        dob: selectedDate!,
-        ageYears: calculatedYears,
-        ageMonths: calculatedMonths,
-      );
+      if (widget.existingChild != null) {
+        await firestoreService.updateChild(
+          childID: widget.existingChild!.id,
+          childName: childNameController.text.trim(),
+          parentType: selectedParentType,
+          guardianName: guardianController.text.trim(),
+          phone: phoneController.text.trim(),
+          village: villageController.text.trim(),
+          gender: selectedGender!,
+          dob: selectedDate!,
+          ageYears: calculatedYears,
+          ageMonths: calculatedMonths,
+        );
 
-      if (!mounted) return;
-      Future.delayed(Duration.zero, () {
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ChildDetailPage(childID: childID),
-            ),
-          );
-        }
-      });
+        if (!mounted) return;
+        _showMessage('Child profile updated successfully.');
+        Navigator.pop(context, true);
+      } else {
+        final childID = await firestoreService.registerChild(
+          childName: childNameController.text.trim(),
+          parentType: selectedParentType,
+          guardianName: guardianController.text.trim(),
+          phone: phoneController.text.trim(),
+          village: villageController.text.trim(),
+          gender: selectedGender!,
+          dob: selectedDate!,
+          ageYears: calculatedYears,
+          ageMonths: calculatedMonths,
+        );
+
+        if (!mounted) return;
+        Future.delayed(Duration.zero, () {
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChildDetailPage(childID: childID),
+              ),
+            );
+          }
+        });
+      }
     } catch (e) {
-      if (mounted) _showMessage('Registration failed: $e');
+      if (mounted) _showMessage('Operation failed: $e');
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -128,11 +189,12 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isEditing = widget.existingChild != null;
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Register New Child',
-          style: TextStyle(fontWeight: FontWeight.w800),
+        title: Text(
+          isEditing ? 'Edit Child Profile' : 'Register New Child',
+          style: const TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
       body: SafeArea(
@@ -278,11 +340,17 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
                                         color: Colors.white,
                                       ),
                                     )
-                                  : const Icon(Icons.person_add_alt_1_rounded),
+                                  : Icon(isEditing
+                                      ? Icons.save_rounded
+                                      : Icons.person_add_alt_1_rounded),
                               label: Text(
                                 saving
-                                    ? 'Creating child profile...'
-                                    : 'Create child profile',
+                                    ? (isEditing
+                                        ? 'Saving changes...'
+                                        : 'Creating child profile...')
+                                    : (isEditing
+                                        ? 'Save profile changes'
+                                        : 'Create child profile'),
                               ),
                             ),
                           ),
@@ -300,6 +368,7 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
   }
 
   Widget _header() {
+    final isEditing = widget.existingChild != null;
     return Row(
       children: [
         IconButton(
@@ -308,10 +377,10 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
           icon: const Icon(Icons.arrow_back_rounded),
         ),
         const SizedBox(width: 4),
-        const Expanded(
+        Expanded(
           child: Text(
-            'New child profile',
-            style: TextStyle(
+            isEditing ? 'Edit child profile' : 'New child profile',
+            style: const TextStyle(
               fontSize: 26,
               fontWeight: FontWeight.w900,
               color: AppColors.text,

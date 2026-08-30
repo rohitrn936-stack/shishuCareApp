@@ -29,7 +29,7 @@ class _ScreeningCardState extends State<ScreeningCard> {
   void didUpdateWidget(covariant ScreeningCard oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (oldWidget.item != widget.item) {
+    if (oldWidget.item != widget.item || _valueController.text != widget.item.value) {
       _valueController.text = widget.item.value;
       _notesController.text = widget.item.notes;
     }
@@ -70,50 +70,189 @@ class _ScreeningCardState extends State<ScreeningCard> {
     _notifyChanged();
   }
 
+  Widget _buildValueInput(ScreeningItem item) {
+    final unit = item.unit;
+    final titleLower = item.title.toLowerCase();
+
+    // 1. Clinical Observation Chips (unit == 'Obs')
+    if (unit == 'Obs') {
+      final val = item.value;
+      return Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          ChoiceChip(
+            label: const Text('Normal', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            selected: val == 'Normal' || (item.checked && !item.redFlag && val.isEmpty),
+            selectedColor: Colors.teal.shade100,
+            onSelected: (selected) {
+              setState(() {
+                if (selected) {
+                  item.value = 'Normal';
+                  item.checked = true;
+                  item.redFlag = false;
+                } else {
+                  item.value = '';
+                }
+              });
+              _notifyChanged();
+            },
+          ),
+          ChoiceChip(
+            label: const Text('Abnormal', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            selected: val == 'Abnormal' || item.redFlag,
+            selectedColor: Colors.red.shade100,
+            onSelected: (selected) {
+              setState(() {
+                if (selected) {
+                  item.value = 'Abnormal';
+                  item.checked = true;
+                  item.redFlag = true;
+                } else {
+                  item.value = '';
+                }
+              });
+              _notifyChanged();
+            },
+          ),
+        ],
+      );
+    }
+
+    // 2. Vaccine / Dose Status Chips (unit == 'Status')
+    if (unit == 'Status') {
+      final val = item.value;
+      return Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          ChoiceChip(
+            label: const Text('Given / Done', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            selected: val == 'Given' || (item.checked && !item.redFlag && val.isEmpty),
+            selectedColor: Colors.teal.shade100,
+            onSelected: (selected) {
+              setState(() {
+                if (selected) {
+                  item.value = 'Given';
+                  item.checked = true;
+                  item.redFlag = false;
+                } else {
+                  item.value = '';
+                }
+              });
+              _notifyChanged();
+            },
+          ),
+          ChoiceChip(
+            label: const Text('Missed / Due', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            selected: val == 'Missed' || item.redFlag,
+            selectedColor: Colors.red.shade100,
+            onSelected: (selected) {
+              setState(() {
+                if (selected) {
+                  item.value = 'Missed';
+                  item.checked = true;
+                  item.redFlag = true;
+                } else {
+                  item.value = '';
+                }
+              });
+              _notifyChanged();
+            },
+          ),
+        ],
+      );
+    }
+
+    // 3. Numeric / Measurement Text Inputs
+    String label = 'Value';
+    String hint = 'Enter value';
+    IconData? icon;
+
+    if (titleLower.contains('weight') || unit == 'kg' || unit == 'g') {
+      label = 'Weight (${unit.isEmpty ? 'kg' : unit})';
+      hint = 'e.g. 3.4';
+      icon = Icons.monitor_weight_outlined;
+    } else if (titleLower.contains('length') || titleLower.contains('height') || unit == 'cm') {
+      label = 'Height / Length (${unit.isEmpty ? 'cm' : unit})';
+      hint = 'e.g. 52.0';
+      icon = Icons.straighten_rounded;
+    } else if (titleLower.contains('head') || titleLower.contains('circumference')) {
+      label = 'Head Circ. (${unit.isEmpty ? 'cm' : unit})';
+      hint = 'e.g. 35.0';
+      icon = Icons.donut_large_rounded;
+    } else if (titleLower.contains('spo2')) {
+      label = 'SpO2 (%)';
+      hint = 'e.g. 98';
+      icon = Icons.favorite_rounded;
+    } else if (unit.isNotEmpty) {
+      label = 'Value ($unit)';
+    }
+
+    return TextField(
+      controller: _valueController,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        isDense: true,
+        prefixIcon: icon != null ? Icon(icon, size: 18) : null,
+        border: const OutlineInputBorder(),
+      ),
+      onChanged: (value) {
+        item.value = value;
+        if (value.isNotEmpty && !item.checked) {
+          item.checked = true;
+        }
+        _notifyChanged();
+      },
+    );
+  }
+
   IconData _iconFor(String title) {
     final t = title.toLowerCase();
 
-    if (t.contains('growth') || t.contains('nutrition')) {
+    if (t.contains('weight') || t.contains('length') || t.contains('height') || t.contains('growth') || t.contains('circumference') || t.contains('bmi') || t.contains('muac')) {
       return Icons.monitor_weight_outlined;
     }
 
-    if (t.contains('hemoglobin') || t.contains('blood')) {
+    if (t.contains('haemoglobin') || t.contains('hemoglobin') || t.contains('blood') || t.contains('tsh') || t.contains('lab')) {
       return Icons.bloodtype_outlined;
     }
 
-    if (t.contains('glucose')) {
-      return Icons.water_drop_outlined;
+    if (t.contains('spo2') || t.contains('cardiac') || t.contains('pressure') || t.contains('bp')) {
+      return Icons.favorite_border_rounded;
     }
 
-    if (t.contains('development')) {
+    if (t.contains('development') || t.contains('m-chat') || t.contains('screen') || t.contains('autism')) {
       return Icons.psychology_outlined;
     }
 
-    if (t.contains('vaccination')) {
+    if (t.contains('immunisation') || t.contains('vaccin')) {
       return Icons.vaccines_outlined;
     }
 
-    if (t.contains('vision') || t.contains('hearing')) {
+    if (t.contains('vision') || t.contains('hearing') || t.contains('eyes') || t.contains('oae') || t.contains('bera')) {
       return Icons.visibility_outlined;
     }
 
-    if (t.contains('danger')) {
-      return Icons.warning_amber_outlined;
+    if (t.contains('oral') || t.contains('dental') || t.contains('palate') || t.contains('teeth') || t.contains('fluoride')) {
+      return Icons.cleaning_services_rounded;
     }
 
-    if (t.contains('behavioral')) {
-      return Icons.emoji_emotions_outlined;
+    if (t.contains('guidance') || t.contains('counsel')) {
+      return Icons.menu_book_rounded;
     }
 
-    if (t.contains('oral')) {
-      return Icons.emoji_food_beverage_outlined;
+    if (t.contains('maternal') || t.contains('epds') || t.contains('wellbeing') || t.contains('behavior') || t.contains('mental')) {
+      return Icons.face_rounded;
     }
 
-    if (t.contains('school')) {
-      return Icons.school_outlined;
+    if (t.contains('physical') || t.contains('exam') || t.contains('hips') || t.contains('fontanelle') || t.contains('gait')) {
+      return Icons.medical_services_outlined;
     }
 
-    return Icons.medical_information_outlined;
+    return Icons.fact_check_outlined;
   }
 
   Color get _stripeColor {
@@ -135,7 +274,6 @@ class _ScreeningCardState extends State<ScreeningCard> {
     final item = widget.item;
 
     final isFlagged = item.redFlag;
-    final isChecked = item.checked;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
@@ -317,31 +455,19 @@ class _ScreeningCardState extends State<ScreeningCard> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          SizedBox(
-                            width: 160,
-                            child: TextField(
-                              controller: _valueController,
-                              decoration: InputDecoration(
-                                labelText: item.unit.isEmpty
-                                    ? 'Value'
-                                    : 'Value (${item.unit})',
-                                isDense: true,
-                                border: const OutlineInputBorder(),
-                              ),
-                              onChanged: (value) {
-                                item.value = value;
-                                _notifyChanged();
-                              },
-                            ),
+                          Expanded(
+                            flex: 3,
+                            child: _buildValueInput(item),
                           ),
 
                           const SizedBox(width: 12),
 
                           Expanded(
+                            flex: 4,
                             child: TextField(
                               controller: _notesController,
                               decoration: const InputDecoration(
-                                labelText: 'Remarks (optional)',
+                                labelText: 'Remarks / Notes (optional)',
                                 hintText: 'Add an observation...',
                                 isDense: true,
                                 border: OutlineInputBorder(),

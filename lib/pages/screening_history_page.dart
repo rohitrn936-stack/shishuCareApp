@@ -2,8 +2,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:web_page/constants/app_colours.dart';
+import 'package:web_page/pages/screening_page.dart';
 import 'package:web_page/pages/screening_report_page.dart';
 import 'package:web_page/services/firestore_service.dart';
+import 'package:web_page/services/screening_service.dart';
+import 'package:web_page/utils/visit_numbering.dart';
 import 'package:web_page/widgets/app_card.dart';
 
 class ScreeningHistoryPage extends StatefulWidget {
@@ -29,6 +32,52 @@ class _ScreeningHistoryPageState extends State<ScreeningHistoryPage> {
     setState(() {
       screeningsFuture = firestoreService.getScreenings(widget.childID);
     });
+  }
+
+  Future<void> _confirmDeleteScreening(String screeningID, String ageGroup) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: AppColors.danger),
+            SizedBox(width: 8),
+            Text('Delete Screening?'),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete the screening record for "$ageGroup"? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final screeningService = ScreeningService();
+      await screeningService.deleteScreening(
+        childID: widget.childID,
+        screeningID: screeningID,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Screening record deleted successfully.')),
+      );
+      _refresh();
+    }
   }
 
   @override
@@ -79,10 +128,15 @@ class _ScreeningHistoryPageState extends State<ScreeningHistoryPage> {
                     }
 
                     final screening = docs[index - 1];
-                    final data =
-                        screening.data() as Map<String, dynamic>;
+                    final data = screening.data() as Map<String, dynamic>;
+                    final visitInfo = VisitNumberingHelper.getVisitInfo(screening, docs);
+                    final displayTitle = visitInfo['title']!;
+                    final badgeText = visitInfo['badge']!;
+
                     return _HistoryCard(
                       data: data,
+                      displayTitle: displayTitle,
+                      badgeText: badgeText,
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -91,7 +145,17 @@ class _ScreeningHistoryPageState extends State<ScreeningHistoryPage> {
                             screening: screening,
                           ),
                         ),
-                      ),
+                      ).then((_) => _refresh()),
+                      onEdit: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ScreeningPage(
+                            childID: widget.childID,
+                            existingScreening: screening,
+                          ),
+                        ),
+                      ).then((_) => _refresh()),
+                      onDelete: () => _confirmDeleteScreening(screening.id, displayTitle),
                     );
                   },
                 ),
@@ -202,11 +266,19 @@ class _ScreeningHistoryPageState extends State<ScreeningHistoryPage> {
 
 class _HistoryCard extends StatelessWidget {
   final Map<String, dynamic> data;
+  final String displayTitle;
+  final String badgeText;
   final VoidCallback onTap;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   const _HistoryCard({
     required this.data,
+    required this.displayTitle,
+    required this.badgeText,
     required this.onTap,
+    required this.onEdit,
+    required this.onDelete,
   });
 
   @override
@@ -249,7 +321,7 @@ class _HistoryCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      data['ageGroup']?.toString() ?? 'Screening',
+                      displayTitle,
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
@@ -259,8 +331,8 @@ class _HistoryCard extends StatelessWidget {
                     const SizedBox(height: 5),
                     Text(
                       date == null
-                          ? 'Date unavailable'
-                          : '${date.day}/${date.month}/${date.year}',
+                          ? '$badgeText • Date unavailable'
+                          : '$badgeText • ${date.day}/${date.month}/${date.year}',
                       style: const TextStyle(color: AppColors.mutedText),
                     ),
                     const SizedBox(height: 9),
@@ -281,6 +353,16 @@ class _HistoryCard extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, color: AppColors.primary),
+                tooltip: 'Edit screening',
+                onPressed: onEdit,
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline_rounded, color: AppColors.danger),
+                tooltip: 'Delete screening',
+                onPressed: onDelete,
               ),
               const Icon(
                 Icons.arrow_forward_ios_rounded,

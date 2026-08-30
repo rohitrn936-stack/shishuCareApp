@@ -1,10 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:web_page/constants/app_colours.dart';
+import 'package:web_page/pages/register_child_page.dart';
 import 'package:web_page/pages/screening_history_page.dart';
 import 'package:web_page/pages/screening_page.dart';
 import 'package:web_page/pages/screening_report_page.dart';
 import 'package:web_page/services/firestore_service.dart';
+import 'package:web_page/services/screening_service.dart';
+import 'package:web_page/utils/visit_numbering.dart';
 import 'package:web_page/widgets/app_card.dart';
 import 'package:web_page/widgets/growth_chart.dart';
 
@@ -21,6 +24,8 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
   final firestoreService = FirestoreService();
   late Future<DocumentSnapshot> childFuture;
   late Future<QuerySnapshot> screeningsFuture;
+  late Future<DocumentSnapshot> vaccinationsFuture;
+  Map<String, dynamic>? _vaccinationMap;
 
   String activeVaccineFilter = 'All';
 
@@ -49,6 +54,8 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
   void _loadData() {
     childFuture = firestoreService.getChild(widget.childID);
     screeningsFuture = firestoreService.getScreenings(widget.childID);
+    vaccinationsFuture = firestoreService.getVaccinations(widget.childID);
+    _vaccinationMap = null;
   }
 
   void _refresh() {
@@ -117,12 +124,38 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const AppSectionTitle(
-                              title: 'Profile information',
-                              subtitle:
-                                  'Basic details stored for this child.',
-                              icon: Icons.badge_outlined,
-                            ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Expanded(
+                                    child: AppSectionTitle(
+                                      title: 'Profile information',
+                                      subtitle:
+                                          'Basic details stored for this child.',
+                                      icon: Icons.badge_outlined,
+                                    ),
+                                  ),
+                                  OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppColors.primary,
+                                      side: const BorderSide(color: AppColors.primary),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    ),
+                                    onPressed: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => RegisterChildPage(
+                                          existingChild: snapshot.data,
+                                        ),
+                                      ),
+                                    ).then((res) {
+                                      if (res == true) _refresh();
+                                    }),
+                                    icon: const Icon(Icons.edit_outlined, size: 18),
+                                    label: const Text('Edit Profile'),
+                                  ),
+                                ],
+                              ),
                             const SizedBox(height: 20),
                             LayoutBuilder(
                               builder: (context, constraints) {
@@ -221,83 +254,74 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
                       const SizedBox(height: 14),
                       LayoutBuilder(
                         builder: (context, constraints) {
-                          if (constraints.maxWidth < 620) {
+                          final isMobile = constraints.maxWidth < 620;
+
+                          final btnNew = _actionButton(
+                            context,
+                            icon: Icons.play_circle_outline_rounded,
+                            title: 'Start new screening',
+                            subtitle: 'Complete current age checklist.',
+                            primary: true,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ScreeningPage(
+                                  childID: widget.childID,
+                                ),
+                              ),
+                            ).then((_) => _refresh()),
+                          );
+
+                          final btnOld = _actionButton(
+                            context,
+                            icon: Icons.edit_calendar_rounded,
+                            title: 'Record old screening',
+                            subtitle: 'Log past visit done outside app.',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ScreeningPage(
+                                  childID: widget.childID,
+                                  isPastScreening: true,
+                                ),
+                              ),
+                            ).then((_) => _refresh()),
+                          );
+
+                          final btnHistory = _actionButton(
+                            context,
+                            icon: Icons.history_rounded,
+                            title: 'View history',
+                            subtitle: 'Review past reports & records.',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ScreeningHistoryPage(
+                                  childID: widget.childID,
+                                ),
+                              ),
+                            ).then((_) => _refresh()),
+                          );
+
+                          if (isMobile) {
                             return Column(
                               children: [
-                                _actionButton(
-                                  context,
-                                  icon: Icons.play_circle_outline_rounded,
-                                  title: 'Start new screening',
-                                  subtitle:
-                                      'Complete the age-based checklist.',
-                                  primary: true,
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ScreeningPage(
-                                        childID: widget.childID,
-                                      ),
-                                    ),
-                                  ).then((_) => _refresh()),
-                                ),
+                                btnNew,
                                 const SizedBox(height: 12),
-                                _actionButton(
-                                  context,
-                                  icon: Icons.history_rounded,
-                                  title: 'View screening history',
-                                  subtitle:
-                                      'Review previous screenings and reports.',
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ScreeningHistoryPage(
-                                        childID: widget.childID,
-                                      ),
-                                    ),
-                                  ).then((_) => _refresh()),
-                                ),
+                                btnOld,
+                                const SizedBox(height: 12),
+                                btnHistory,
                               ],
                             );
                           }
 
                           return Row(
                             children: [
-                              Expanded(
-                                child: _actionButton(
-                                  context,
-                                  icon: Icons.play_circle_outline_rounded,
-                                  title: 'Start new screening',
-                                  subtitle:
-                                      'Complete the age-based checklist.',
-                                  primary: true,
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ScreeningPage(
-                                        childID: widget.childID,
-                                      ),
-                                    ),
-                                  ).then((_) => _refresh()),
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: _actionButton(
-                                  context,
-                                  icon: Icons.history_rounded,
-                                  title: 'View screening history',
-                                  subtitle:
-                                      'Review previous screenings and reports.',
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ScreeningHistoryPage(
-                                        childID: widget.childID,
-                                      ),
-                                    ),
-                                  ).then((_) => _refresh()),
-                                ),
-                              ),
+                              Expanded(child: btnNew),
+                              const SizedBox(width: 12),
+                              Expanded(child: btnOld),
+                              const SizedBox(width: 12),
+                              Expanded(child: btnHistory),
                             ],
                           );
                         },
@@ -355,7 +379,7 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  '${data['childID']} • ${data['gender'] ?? ''} • $parentType: ${data['guardianName'] ?? ''}',
+                  '${data['childID']} • ${data['gender'] ?? ''} • $parentType: ${data['guardianName'] ?? ''} • ${data['phone'] ?? ''}',
                   style: const TextStyle(
                     color: Colors.white70,
                     fontWeight: FontWeight.w600,
@@ -397,96 +421,114 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
   }
 
   Widget _vaccinationsSection() {
+    if (_vaccinationMap != null) {
+      return _buildVaccinationsCard(_vaccinationMap!);
+    }
+
     return FutureBuilder<DocumentSnapshot>(
-      future: firestoreService.getVaccinations(widget.childID),
+      future: vaccinationsFuture,
       builder: (context, snapshot) {
-        final statusMap = (snapshot.data?.data() as Map<String, dynamic>?) ?? {};
-
-        int completed = 0;
-        for (final v in vaccineList) {
-          if (statusMap[v['id']]?['completed'] == true) completed++;
+        if (snapshot.connectionState == ConnectionState.waiting && _vaccinationMap == null) {
+          return const AppCard(
+            padding: EdgeInsets.all(20),
+            child: Center(child: CircularProgressIndicator()),
+          );
         }
-        final pending = vaccineList.length - completed;
 
-        return AppCard(
-          padding: const EdgeInsets.all(12),
-          child: ExpansionTile(
-            initiallyExpanded: true,
-            shape: const Border(),
-            leading: const Icon(Icons.vaccines_rounded, color: AppColors.primary, size: 26),
-            title: const Text(
-              'Vaccinations Tracker',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: AppColors.text),
+        final statusMap = (snapshot.data?.data() as Map<String, dynamic>?) ?? {};
+        _vaccinationMap = Map<String, dynamic>.from(statusMap);
+
+        return _buildVaccinationsCard(_vaccinationMap!);
+      },
+    );
+  }
+
+  Widget _buildVaccinationsCard(Map<String, dynamic> statusMap) {
+    int completed = 0;
+    for (final v in vaccineList) {
+      if (statusMap[v['id']]?['completed'] == true) completed++;
+    }
+    final pending = vaccineList.length - completed;
+
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        shape: const Border(),
+        leading: const Icon(Icons.vaccines_rounded, color: AppColors.primary, size: 26),
+        title: const Text(
+          'Vaccinations Tracker',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: AppColors.text),
+        ),
+        subtitle: Text(
+          '$pending Pending • $completed Completed',
+          style: const TextStyle(color: AppColors.mutedText, fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                _vacFilterTab('All', vaccineList.length),
+                const SizedBox(width: 8),
+                _vacFilterTab('Pending', pending, color: AppColors.danger),
+                const SizedBox(width: 8),
+                _vacFilterTab('Completed', completed, color: AppColors.success),
+              ],
             ),
-            subtitle: Text(
-              '$pending Pending • $completed Completed',
-              style: const TextStyle(color: AppColors.mutedText, fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  children: [
-                    _vacFilterTab('All', vaccineList.length),
-                    const SizedBox(width: 8),
-                    _vacFilterTab('Pending', pending, color: AppColors.danger),
-                    const SizedBox(width: 8),
-                    _vacFilterTab('Completed', completed, color: AppColors.success),
-                  ],
+          ),
+          const Divider(),
+          for (final vac in vaccineList) ...[
+            if (_shouldShowVaccine(vac['id']!, statusMap))
+              ListTile(
+                dense: true,
+                leading: Checkbox(
+                  value: statusMap[vac['id']]?['completed'] == true,
+                  activeColor: AppColors.success,
+                  onChanged: (val) {
+                    setState(() {
+                      statusMap[vac['id']!] = {'completed': val ?? false};
+                    });
+                    firestoreService.updateVaccinationStatus(
+                      childID: widget.childID,
+                      vaccineId: vac['id']!,
+                      isDone: val ?? false,
+                    );
+                  },
                 ),
-              ),
-              const Divider(),
-              for (final vac in vaccineList) ...[
-                if (_shouldShowVaccine(vac['id']!, statusMap))
-                  ListTile(
-                    dense: true,
-                    leading: Checkbox(
-                      value: statusMap[vac['id']]?['completed'] == true,
-                      activeColor: AppColors.success,
-                      onChanged: (val) async {
-                        await firestoreService.updateVaccinationStatus(
-                          childID: widget.childID,
-                          vaccineId: vac['id']!,
-                          isDone: val ?? false,
-                        );
-                        _refresh();
-                      },
-                    ),
-                    title: Text(
-                      vac['name']!,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        decoration: statusMap[vac['id']]?['completed'] == true
-                            ? TextDecoration.lineThrough
-                            : null,
-                      ),
-                    ),
-                    subtitle: Text('Due: ${vac['age']!}'),
-                    trailing: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: statusMap[vac['id']]?['completed'] == true
-                            ? AppColors.success.withOpacity(0.12)
-                            : AppColors.danger.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        statusMap[vac['id']]?['completed'] == true ? 'Given' : 'Pending',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: statusMap[vac['id']]?['completed'] == true
-                              ? AppColors.success
-                              : AppColors.danger,
-                        ),
-                      ),
+                title: Text(
+                  vac['name']!,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    decoration: statusMap[vac['id']]?['completed'] == true
+                        ? TextDecoration.lineThrough
+                        : null,
+                  ),
+                ),
+                subtitle: Text('Due: ${vac['age']!}'),
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusMap[vac['id']]?['completed'] == true
+                        ? AppColors.success.withOpacity(0.12)
+                        : AppColors.danger.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    statusMap[vac['id']]?['completed'] == true ? 'Given' : 'Pending',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: statusMap[vac['id']]?['completed'] == true
+                          ? AppColors.success
+                          : AppColors.danger,
                     ),
                   ),
-              ],
-            ],
-          ),
-        );
-      },
+                ),
+              ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -575,7 +617,7 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
               return Column(
                 children: [
                   for (final doc in docs.take(5)) ...[
-                    _visitTile(doc),
+                    _visitTile(doc, docs),
                     const SizedBox(height: 8),
                   ],
                 ],
@@ -587,18 +629,67 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
     );
   }
 
-  Widget _visitTile(QueryDocumentSnapshot doc) {
+  Future<void> _confirmDeleteScreening(BuildContext context, String screeningID, String ageGroup) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: AppColors.danger),
+            SizedBox(width: 8),
+            Text('Delete Screening?'),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete the screening record for "$ageGroup"? This action cannot be undone and will remove its data from the child\'s growth chart.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final screeningService = ScreeningService();
+      await screeningService.deleteScreening(
+        childID: widget.childID,
+        screeningID: screeningID,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Screening record deleted successfully.')),
+      );
+      _refresh();
+    }
+  }
+
+  Widget _visitTile(QueryDocumentSnapshot doc, List<QueryDocumentSnapshot> allDocs) {
     final data = doc.data() as Map<String, dynamic>;
     final Timestamp? ts = data['screeningDate'];
     final date = ts?.toDate();
     final redFlags = (data['redFlagCount'] as num?)?.toInt() ?? 0;
     final completed = (data['completedItems'] as num?)?.toInt() ?? 0;
+    
+    final visitInfo = VisitNumberingHelper.getVisitInfo(doc, allDocs);
+    final displayTitle = visitInfo['title']!;
+    final badgeText = visitInfo['badge']!;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return Material(
+      color: AppColors.background,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
         onTap: () => Navigator.push(
           context,
@@ -608,22 +699,24 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
               screening: doc,
             ),
           ),
-        ),
+        ).then((_) => _refresh()),
         leading: Icon(
           redFlags > 0 ? Icons.warning_amber_rounded : Icons.verified_rounded,
           color: redFlags > 0 ? AppColors.danger : AppColors.success,
         ),
         title: Text(
-          data['ageGroup']?.toString() ?? 'Screening Visit',
+          displayTitle,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
-          date == null ? 'Date unavailable' : '${date.day}/${date.month}/${date.year} • $completed checked',
+          date == null
+              ? '$badgeText • Date unavailable'
+              : '$badgeText • ${date.day}/${date.month}/${date.year} • $completed checked',
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (redFlags > 0)
+            if (redFlags > 0) ...[
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -635,6 +728,26 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
                   style: const TextStyle(color: AppColors.danger, fontSize: 11, fontWeight: FontWeight.bold),
                 ),
               ),
+              const SizedBox(width: 4),
+            ],
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, color: AppColors.primary, size: 20),
+              tooltip: 'Edit screening',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ScreeningPage(
+                    childID: widget.childID,
+                    existingScreening: doc,
+                  ),
+                ),
+              ).then((_) => _refresh()),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline_rounded, color: AppColors.danger, size: 20),
+              tooltip: 'Delete screening',
+              onPressed: () => _confirmDeleteScreening(context, doc.id, displayTitle),
+            ),
             const Icon(Icons.chevron_right_rounded, color: AppColors.mutedText),
           ],
         ),

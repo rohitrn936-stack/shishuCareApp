@@ -64,6 +64,35 @@ class FirestoreService {
   }
 
   // -------------------------------
+  // Update Child Profile
+  // -------------------------------
+  Future<void> updateChild({
+    required String childID,
+    required String childName,
+    required String guardianName,
+    String parentType = 'Mother',
+    required String phone,
+    required String village,
+    required String gender,
+    required DateTime dob,
+    required int ageYears,
+    required int ageMonths,
+  }) async {
+    await _firestore.collection("children").doc(childID).update({
+      "childName": childName,
+      "parentType": parentType,
+      "guardianName": guardianName,
+      "phone": phone,
+      "village": village,
+      "gender": gender,
+      "dob": Timestamp.fromDate(dob),
+      "ageYears": ageYears,
+      "ageMonths": ageMonths,
+      "updatedAt": FieldValue.serverTimestamp(),
+    });
+  }
+
+  // -------------------------------
   // Get Child Details
   // -------------------------------
   Future<DocumentSnapshot> getChild(String childID) async {
@@ -101,6 +130,31 @@ class FirestoreService {
         .where("childName", isGreaterThanOrEqualTo: childName)
         .where("childName", isLessThan: "$childName\uf8ff")
         .get();
+  }
+
+  // -------------------------------
+  // Case-Insensitive Search Children
+  // -------------------------------
+  Future<List<QueryDocumentSnapshot>> searchChildren(String query) async {
+    final cleanQuery = query.trim().toLowerCase();
+    if (cleanQuery.isEmpty) return [];
+
+    final snapshot = await _firestore.collection("children").get();
+
+    return snapshot.docs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      final childID = (data['childID'] ?? doc.id).toString().toLowerCase();
+      final childName = (data['childName'] ?? '').toString().toLowerCase();
+      final guardianName = (data['guardianName'] ?? '').toString().toLowerCase();
+      final phone = (data['phone'] ?? '').toString().toLowerCase();
+      final village = (data['village'] ?? '').toString().toLowerCase();
+
+      return childID.contains(cleanQuery) ||
+          childName.contains(cleanQuery) ||
+          guardianName.contains(cleanQuery) ||
+          phone.contains(cleanQuery) ||
+          village.contains(cleanQuery);
+    }).toList();
   }
 
   // -------------------------------
