@@ -38,7 +38,12 @@ class FirestoreService {
     required String guardianName,
     String parentType = 'Guardian',
     required String phone,
-    required String village,
+    String houseNo = '',
+    String street = '',
+    String locality = '',
+    String city = '',
+    String pincode = '',
+    required String address,
     required String gender,
     required DateTime dob,
     required int ageYears,
@@ -52,7 +57,13 @@ class FirestoreService {
       "parentType": parentType,
       "guardianName": guardianName,
       "phone": phone,
-      "village": village,
+      "houseNo": houseNo,
+      "street": street,
+      "locality": locality,
+      "city": city,
+      "pincode": pincode,
+      "address": address,
+      "village": address, // Keep fallback for existing queries
       "gender": gender,
       "dob": Timestamp.fromDate(dob),
       "ageYears": ageYears,
@@ -72,7 +83,12 @@ class FirestoreService {
     required String guardianName,
     String parentType = 'Mother',
     required String phone,
-    required String village,
+    String houseNo = '',
+    String street = '',
+    String locality = '',
+    String city = '',
+    String pincode = '',
+    required String address,
     required String gender,
     required DateTime dob,
     required int ageYears,
@@ -83,7 +99,13 @@ class FirestoreService {
       "parentType": parentType,
       "guardianName": guardianName,
       "phone": phone,
-      "village": village,
+      "houseNo": houseNo,
+      "street": street,
+      "locality": locality,
+      "city": city,
+      "pincode": pincode,
+      "address": address,
+      "village": address,
       "gender": gender,
       "dob": Timestamp.fromDate(dob),
       "ageYears": ageYears,
@@ -147,13 +169,13 @@ class FirestoreService {
       final childName = (data['childName'] ?? '').toString().toLowerCase();
       final guardianName = (data['guardianName'] ?? '').toString().toLowerCase();
       final phone = (data['phone'] ?? '').toString().toLowerCase();
-      final village = (data['village'] ?? '').toString().toLowerCase();
+      final address = (data['address'] ?? data['village'] ?? '').toString().toLowerCase();
 
       return childID.contains(cleanQuery) ||
           childName.contains(cleanQuery) ||
           guardianName.contains(cleanQuery) ||
           phone.contains(cleanQuery) ||
-          village.contains(cleanQuery);
+          address.contains(cleanQuery);
     }).toList();
   }
 
@@ -185,5 +207,17 @@ class FirestoreService {
         "date": isDone ? Timestamp.now() : null,
       }
     }, SetOptions(merge: true));
+  }
+
+  // -------------------------------
+  // Reminder History
+  // -------------------------------
+  Future<QuerySnapshot> getReminderHistory(String childID) async {
+    return await _firestore
+        .collection("children")
+        .doc(childID)
+        .collection("reminders")
+        .orderBy("sentAt", descending: true)
+        .get();
   }
 }

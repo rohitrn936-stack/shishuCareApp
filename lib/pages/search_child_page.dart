@@ -5,6 +5,7 @@ import 'package:web_page/constants/app_colours.dart';
 import 'package:web_page/pages/child_detail_page.dart';
 import 'package:web_page/services/firestore_service.dart';
 import 'package:web_page/widgets/app_card.dart';
+import 'package:web_page/widgets/sleek_app_bar.dart';
 
 class SearchChildPage extends StatefulWidget {
   const SearchChildPage({super.key});
@@ -65,11 +66,8 @@ class _SearchChildPageState extends State<SearchChildPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Find Existing Child',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
+      appBar: const SleekAppBar(
+        title: 'Find Existing Child',
       ),
       body: SafeArea(
         child: Center(
@@ -301,8 +299,8 @@ class _ChildResultCardState extends State<_ChildResultCard> {
                           text: child['childID']?.toString() ?? '-',
                         ),
                         _MiniChip(
-                          icon: Icons.location_on_outlined,
-                          text: child['village']?.toString() ?? '-',
+                          icon: Icons.home_outlined,
+                          text: (child['address'] ?? child['village'])?.toString() ?? '-',
                         ),
                       ],
                     ),

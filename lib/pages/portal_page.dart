@@ -1,11 +1,9 @@
-
 import 'package:flutter/material.dart';
-import 'package:web_page/constants/app_colours.dart';
 import 'package:web_page/pages/login_page.dart';
 import 'package:web_page/pages/register_child_page.dart';
 import 'package:web_page/pages/search_child_page.dart';
-import 'package:web_page/widgets/app_card.dart';
 import 'package:web_page/widgets/portal_action_card.dart';
+import 'package:web_page/widgets/sleek_app_bar.dart';
 
 class PortalPage extends StatelessWidget {
   const PortalPage({super.key});
@@ -13,12 +11,8 @@ class PortalPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 22,
-        title: const Text(
-          'ShishuCare',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
+      appBar: SleekAppBar(
+        title: 'ShishuCare Portal',
         actions: [
           IconButton(
             tooltip: 'Log out',
@@ -29,7 +23,7 @@ class PortalPage extends StatelessWidget {
                 (_) => false,
               );
             },
-            icon: const Icon(Icons.logout_rounded),
+            icon: const Icon(Icons.logout_rounded, color: Colors.white),
           ),
           const SizedBox(width: 10),
         ],
@@ -37,7 +31,7 @@ class PortalPage extends StatelessWidget {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 28, 20, 36),
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 36),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 1050),
               child: Column(
@@ -118,38 +112,6 @@ class PortalPage extends StatelessWidget {
                       );
                     },
                   ),
-                  const SizedBox(height: 18),
-                  AppCard(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 17,
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(.10),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.tips_and_updates_rounded,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        const Expanded(
-                          child: Text(
-                            'Tip: Use the child ID for the quickest way to reopen a profile.',
-                            style: TextStyle(
-                              color: AppColors.mutedText,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -162,49 +124,71 @@ class PortalPage extends StatelessWidget {
   Widget _hero() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [AppColors.primaryDark, AppColors.primary],
+          colors: [
+            Color(0xFF0288D1), // Bright sky blue
+            Color(0xFF26C6DA), // Soft cyan blue fade
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: Colors.white.withOpacity(0.30), width: 1.2),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x28673AB7),
-            blurRadius: 28,
-            offset: Offset(0, 13),
+            color: Color(0x300288D1),
+            blurRadius: 26,
+            offset: Offset(0, 10),
           ),
         ],
       ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            'Good to see you 👋',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.20),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withOpacity(0.35), width: 1.5),
+            ),
+            child: const Icon(
+              Icons.local_hospital_rounded,
+              color: Colors.white,
+              size: 34,
             ),
           ),
-          SizedBox(height: 8),
-          Text(
-            'Child screening workspace',
+          const SizedBox(height: 14),
+          const Text(
+            'CHILD CENTRAL',
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white,
-              fontSize: 30,
+              fontSize: 34,
               fontWeight: FontWeight.w900,
+              letterSpacing: 2.5,
+              shadows: [
+                Shadow(
+                  color: Colors.black12,
+                  offset: Offset(0, 2),
+                  blurRadius: 4,
+                ),
+              ],
             ),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
-            'Register a child or find an existing profile to continue.',
+            'Pediatric Growth & Child Development Clinic',
+            textAlign: TextAlign.center,
             style: TextStyle(
-              color: Colors.white70,
-              fontSize: 16,
-              height: 1.4,
+              color: Colors.white.withOpacity(0.92),
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              fontStyle: FontStyle.italic,
+              letterSpacing: 0.3,
             ),
           ),
         ],

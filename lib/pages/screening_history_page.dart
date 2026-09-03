@@ -6,8 +6,10 @@ import 'package:web_page/pages/screening_page.dart';
 import 'package:web_page/pages/screening_report_page.dart';
 import 'package:web_page/services/firestore_service.dart';
 import 'package:web_page/services/screening_service.dart';
+import 'package:web_page/utils/snackbar_helper.dart';
 import 'package:web_page/utils/visit_numbering.dart';
 import 'package:web_page/widgets/app_card.dart';
+import 'package:web_page/widgets/sleek_app_bar.dart';
 
 class ScreeningHistoryPage extends StatefulWidget {
   final String childID;
@@ -73,9 +75,7 @@ class _ScreeningHistoryPageState extends State<ScreeningHistoryPage> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Screening record deleted successfully.')),
-      );
+      showTopSnackBar(context, 'Screening record deleted successfully.');
       _refresh();
     }
   }
@@ -83,16 +83,13 @@ class _ScreeningHistoryPageState extends State<ScreeningHistoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Screening History',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
+      appBar: SleekAppBar(
+        title: 'Screening History',
         actions: [
           IconButton(
             tooltip: 'Refresh',
             onPressed: _refresh,
-            icon: const Icon(Icons.refresh_rounded),
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
           ),
           const SizedBox(width: 8),
         ],
@@ -288,6 +285,8 @@ class _HistoryCard extends StatelessWidget {
     final redFlags = (data['redFlagCount'] as num?)?.toInt() ?? 0;
     final completed = (data['completedItems'] as num?)?.toInt() ?? 0;
 
+    final hasPrescription = data['prescriptionUrl'] != null || data['prescriptionData'] != null;
+
     return AppCard(
       padding: EdgeInsets.zero,
       child: InkWell(
@@ -349,6 +348,11 @@ class _HistoryCard extends StatelessWidget {
                               ? AppColors.danger
                               : AppColors.mutedText,
                         ),
+                        if (hasPrescription)
+                          const _StatChip(
+                            label: 'Rx attached',
+                            color: AppColors.primary,
+                          ),
                       ],
                     ),
                   ],

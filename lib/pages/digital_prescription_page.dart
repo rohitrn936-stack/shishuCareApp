@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:web_page/services/prescription_service.dart';
+import 'package:web_page/data/prescription_templates.dart';
+import 'package:web_page/utils/snackbar_helper.dart';
 import 'package:web_page/widgets/medicine_card.dart';
+import 'package:web_page/widgets/sleek_app_bar.dart';
 
 class DigitalPrescriptionPage extends StatefulWidget {
   final String childID;
@@ -13,15 +15,11 @@ class DigitalPrescriptionPage extends StatefulWidget {
 }
 
 class _DigitalPrescriptionPageState extends State<DigitalPrescriptionPage> {
-  final PrescriptionService _prescriptionService = PrescriptionService();
-
   final TextEditingController diagnosisController = TextEditingController();
-
   final TextEditingController notesController = TextEditingController();
 
   List<Map<String, TextEditingController>> medicines = [];
-
-  bool isSaving = false;
+  PrescriptionTemplate? selectedTemplate;
 
   @override
   void initState() {
@@ -32,6 +30,32 @@ class _DigitalPrescriptionPageState extends State<DigitalPrescriptionPage> {
       "dosage": TextEditingController(),
       "duration": TextEditingController(),
       "instruction": TextEditingController(),
+    });
+  }
+
+  void _applyTemplate(PrescriptionTemplate? template) {
+    if (template == null) return;
+    setState(() {
+      selectedTemplate = template;
+      diagnosisController.text = template.diagnosis;
+      notesController.text = template.notes;
+
+      for (final medicine in medicines) {
+        medicine["medicine"]?.dispose();
+        medicine["dosage"]?.dispose();
+        medicine["duration"]?.dispose();
+        medicine["instruction"]?.dispose();
+      }
+      medicines.clear();
+
+      for (final med in template.medicines) {
+        medicines.add({
+          "medicine": TextEditingController(text: med["medicine"] ?? ""),
+          "dosage": TextEditingController(text: med["dosage"] ?? ""),
+          "duration": TextEditingController(text: med["duration"] ?? ""),
+          "instruction": TextEditingController(text: med["instruction"] ?? ""),
+        });
+      }
     });
   }
 
@@ -46,39 +70,31 @@ class _DigitalPrescriptionPageState extends State<DigitalPrescriptionPage> {
     });
   }
 
-  Future<void> _savePrescription() async {
-    setState(() {
-      isSaving = true;
-    });
-
+  void _attachPrescription() {
     List<Map<String, String>> medicineList = [];
 
     for (final medicine in medicines) {
-      medicineList.add({
-        "medicine": medicine["medicine"]!.text,
-        "dosage": medicine["dosage"]!.text,
-        "duration": medicine["duration"]!.text,
-        "instruction": medicine["instruction"]!.text,
-      });
+      final medName = medicine["medicine"]!.text.trim();
+      if (medName.isNotEmpty) {
+        medicineList.add({
+          "medicine": medName,
+          "dosage": medicine["dosage"]!.text.trim(),
+          "duration": medicine["duration"]!.text.trim(),
+          "instruction": medicine["instruction"]!.text.trim(),
+        });
+      }
     }
 
-    await _prescriptionService.savePrescription(
-      childID: widget.childID,
+    final prescriptionMap = {
+      "diagnosis": diagnosisController.text.trim(),
+      "notes": notesController.text.trim(),
+      "medicines": medicineList,
+      if (selectedTemplate != null) "templateName": selectedTemplate!.name,
+    };
 
-      diagnosis: diagnosisController.text,
+    showTopSnackBar(context, "Prescription Attached to Screening");
 
-      notes: notesController.text,
-
-      medicines: medicineList,
-    );
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Prescription Saved Successfully")),
-    );
-
-    Navigator.pop(context);
+    Navigator.pop(context, prescriptionMap);
   }
 
   @override
@@ -101,12 +117,8 @@ class _DigitalPrescriptionPageState extends State<DigitalPrescriptionPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F2FA),
 
-      appBar: AppBar(
-        title: const Text("Digital Prescription"),
-
-        backgroundColor: Colors.deepPurple,
-
-        foregroundColor: Colors.white,
+      appBar: const SleekAppBar(
+        title: 'Digital Prescription',
       ),
 
       body: SingleChildScrollView(
@@ -116,6 +128,32 @@ class _DigitalPrescriptionPageState extends State<DigitalPrescriptionPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
 
           children: [
+            const Text(
+              "Select Prescription Template",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+
+            const SizedBox(height: 8),
+
+            DropdownButtonFormField<PrescriptionTemplate>(
+              value: selectedTemplate,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.description_outlined),
+                hintText: "Choose a pre-determined template...",
+              ),
+              items: prescriptionTemplates.map((tmpl) {
+                return DropdownMenuItem<PrescriptionTemplate>(
+                  value: tmpl,
+                  child: Text(tmpl.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                );
+              }).toList(),
+              onChanged: _applyTemplate,
+            ),
+
+            const SizedBox(height: 24),
+
             const Text(
               "Diagnosis",
 
@@ -208,20 +246,9 @@ class _DigitalPrescriptionPageState extends State<DigitalPrescriptionPage> {
               height: 50,
 
               child: ElevatedButton.icon(
-                onPressed: isSaving ? null : _savePrescription,
-
-                icon: isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.save),
-
-                label: Text(isSaving ? "Saving..." : "Save Prescription"),
+                onPressed: _attachPrescription,
+                icon: const Icon(Icons.check_circle),
+                label: const Text("Attach Prescription to Screening"),
               ),
             ),
           ],

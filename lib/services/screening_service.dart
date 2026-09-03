@@ -12,6 +12,7 @@ class ScreeningService {
     required List<Map<String, dynamic>> results,
     Uint8List? prescriptionBytes,
     String? prescriptionFileName,
+    Map<String, dynamic>? prescriptionData,
     DateTime? customScreeningDate,
     String? existingScreeningID,
   }) async {
@@ -71,7 +72,7 @@ class ScreeningService {
       );
     }
 
-    await docRef.set({
+    final Map<String, dynamic> dataToSave = {
       "screeningDate": customScreeningDate != null
           ? Timestamp.fromDate(customScreeningDate)
           : FieldValue.serverTimestamp(),
@@ -80,21 +81,76 @@ class ScreeningService {
       "redFlagCount": redFlagCount,
       "completedItems": completedItems,
       "flagsByDomain": flagsByDomain,
-      "prescriptionUrl": prescriptionUrl,
       if (parsedWeight != null) "weight": parsedWeight,
       if (parsedHeight != null) "height": parsedHeight,
-    });
+    };
+
+    if (prescriptionUrl != null) {
+      dataToSave["prescriptionUrl"] = prescriptionUrl;
+    } else if (existingScreeningID != null && existingScreeningID.isNotEmpty) {
+      dataToSave["prescriptionUrl"] = FieldValue.delete();
+    }
+
+    if (prescriptionFileName != null) {
+      dataToSave["prescriptionFileName"] = prescriptionFileName;
+    } else if (existingScreeningID != null && existingScreeningID.isNotEmpty) {
+      dataToSave["prescriptionFileName"] = FieldValue.delete();
+    }
+
+    if (prescriptionData != null) {
+      dataToSave["prescriptionData"] = prescriptionData;
+    } else if (existingScreeningID != null && existingScreeningID.isNotEmpty) {
+      dataToSave["prescriptionData"] = FieldValue.delete();
+    }
+
+    await docRef.set(dataToSave, SetOptions(merge: true));
   }
 
   Future<void> deleteScreening({
     required String childID,
     required String screeningID,
   }) async {
-    await _firestore
+    final docRef = _firestore
         .collection("children")
         .doc(childID)
         .collection("screenings")
-        .doc(screeningID)
-        .delete();
+        .doc(screeningID);
+
+    try {
+      final snapshot = await docRef.get();
+      if (snapshot.exists) {
+        final data = snapshot.data();
+        if (data != null) {
+          final prescriptionUrl = data['prescriptionUrl'] as String?;
+          final prescriptionFileName = data['prescriptionFileName'] as String?;
+
+          if (prescriptionUrl != null && prescriptionUrl.isNotEmpty) {
+            await _storageService.deletePrescriptionByUrl(prescriptionUrl);
+          } else if (prescriptionFileName != null && prescriptionFileName.isNotEmpty) {
+            await _storageService.deletePrescriptionFile(
+              childID: childID,
+              screeningID: screeningID,
+              fileName: prescriptionFileName,
+            );
+          }
+        }
+      }
+    } catch (_) {}
+
+    // Delete screening document (deletes embedded prescriptionData permanently)
+    await docRef.delete();
+
+    // Clean up any legacy subcollection entries
+    try {
+      final legacyDocs = await _firestore
+          .collection("children")
+          .doc(childID)
+          .collection("prescriptions")
+          .where("screeningID", isEqualTo: screeningID)
+          .get();
+      for (final d in legacyDocs.docs) {
+        await d.reference.delete();
+      }
+    } catch (_) {}
   }
 }

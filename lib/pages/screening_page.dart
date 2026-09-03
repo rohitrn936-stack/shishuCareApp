@@ -4,12 +4,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:web_page/constants/app_colours.dart';
+import 'package:web_page/data/prescription_templates.dart';
 import 'package:web_page/data/screening_checklists.dart';
 import 'package:web_page/models/screening_item.dart';
+import 'package:web_page/pages/digital_prescription_page.dart';
 import 'package:web_page/services/firestore_service.dart';
 import 'package:web_page/services/screening_service.dart';
+import 'package:web_page/utils/snackbar_helper.dart';
 import 'package:web_page/widgets/app_card.dart';
 import 'package:web_page/widgets/screening_card.dart';
+import 'package:web_page/widgets/sleek_app_bar.dart';
 
 class ScreeningPage extends StatefulWidget {
   final String childID;
@@ -42,6 +46,9 @@ class _ScreeningPageState extends State<ScreeningPage> {
 
   Uint8List? prescriptionBytes;
   String? prescriptionFileName;
+  String prescriptionMode = 'upload';
+  PrescriptionTemplate? selectedPrescriptionTemplate;
+  Map<String, dynamic>? customDigitalPrescription;
 
   DateTime selectedScreeningDate = DateTime.now();
   String? selectedAgeGroup;
@@ -59,6 +66,13 @@ class _ScreeningPageState extends State<ScreeningPage> {
       if (sData['ageGroup'] != null) {
         selectedAgeGroup = sData['ageGroup'].toString();
         ageGroup = selectedAgeGroup!;
+      }
+      if (sData['prescriptionFileName'] != null) {
+        prescriptionFileName = sData['prescriptionFileName'].toString();
+      }
+      if (sData['prescriptionData'] != null) {
+        prescriptionMode = 'template';
+        customDigitalPrescription = Map<String, dynamic>.from(sData['prescriptionData'] as Map);
       }
     }
   }
@@ -132,6 +146,65 @@ class _ScreeningPageState extends State<ScreeningPage> {
         notes: saved?['notes']?.toString() ?? '',
       );
     }).toList();
+
+    _calculateBmi();
+  }
+
+  void _calculateBmi() {
+    ScreeningItem? weightItem;
+    ScreeningItem? heightItem;
+    ScreeningItem? bmiItem;
+
+    for (final item in ageBandItems) {
+      final title = item.title.toLowerCase();
+      final unit = item.unit.toLowerCase();
+
+      if (title.contains('bmi') || unit.contains('bmi') || unit.contains('kg/m²') || unit.contains('kg/m2')) {
+        bmiItem ??= item;
+      } else if (title.contains('weight') || unit == 'kg') {
+        weightItem ??= item;
+      } else if ((title.contains('height') || title.contains('length') || unit == 'cm') && !title.contains('head')) {
+        heightItem ??= item;
+      }
+    }
+
+    final weightVal = double.tryParse(weightItem?.value.trim() ?? '');
+    final heightVal = double.tryParse(heightItem?.value.trim() ?? '');
+
+    if (weightVal != null && weightVal > 0 && heightVal != null && heightVal > 0) {
+      if (bmiItem == null && weightItem != null && heightItem != null) {
+        bmiItem = ScreeningItem(
+          title: "BMI (Body Mass Index)",
+          description: "Calculate BMI (kg/m²).",
+          redFlagText: "BMI out of normal percentile range.",
+          unit: "kg/m²",
+        );
+        final heightIndex = ageBandItems.indexOf(heightItem);
+        if (heightIndex != -1) {
+          ageBandItems.insert(heightIndex + 1, bmiItem);
+        } else {
+          ageBandItems.add(bmiItem);
+        }
+      }
+
+      final heightM = heightVal > 3.0 ? heightVal / 100.0 : heightVal;
+      final bmi = weightVal / (heightM * heightM);
+      final bmiFormatted = bmi.toStringAsFixed(1);
+
+      if (bmiItem != null && bmiItem.value != bmiFormatted) {
+        bmiItem.value = bmiFormatted;
+        bmiItem.checked = true;
+      }
+    } else if (bmiItem != null && (weightVal == null || heightVal == null)) {
+      if (bmiItem.value.isNotEmpty) {
+        bmiItem.value = '';
+      }
+    }
+  }
+
+  void _onItemChanged() {
+    _calculateBmi();
+    setState(() {});
   }
 
   void _onAgeGroupChanged(String? newGroup) {
@@ -295,11 +368,10 @@ class _ScreeningPageState extends State<ScreeningPage> {
     if (picked != null) {
       if (dob != null && picked.isBefore(DateTime(dob.year, dob.month, dob.day))) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Error: Screening date cannot be earlier than child's birth date (${dob.day}/${dob.month}/${dob.year})."),
-            backgroundColor: Colors.red.shade800,
-          ),
+        showTopSnackBar(
+          context,
+          "Error: Screening date cannot be earlier than child's birth date (${dob.day}/${dob.month}/${dob.year}).",
+          isError: true,
         );
         return;
       }
@@ -324,25 +396,7 @@ class _ScreeningPageState extends State<ScreeningPage> {
   Future<void> _saveScreening(Map<String, dynamic> childData) async {
     final validationError = _validateScreening(childData);
     if (validationError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error_outline_rounded, color: Colors.white),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  validationError,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: Colors.red.shade800,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      showTopSnackBar(context, validationError, isError: true);
       return;
     }
 
@@ -350,38 +404,46 @@ class _ScreeningPageState extends State<ScreeningPage> {
       isSaving = true;
     });
 
-    final allResults = [...ageBandItems, ...universalItems];
+    Map<String, dynamic>? prescriptionDataToSave;
+    if (prescriptionMode == 'template') {
+      if (customDigitalPrescription != null) {
+        prescriptionDataToSave = customDigitalPrescription;
+      } else if (selectedPrescriptionTemplate != null) {
+        prescriptionDataToSave = {
+          "templateName": selectedPrescriptionTemplate!.name,
+          "diagnosis": selectedPrescriptionTemplate!.diagnosis,
+          "notes": selectedPrescriptionTemplate!.notes,
+          "medicines": selectedPrescriptionTemplate!.medicines,
+        };
+      }
+    }
 
     try {
       await screeningService.saveScreening(
         childID: widget.childID,
         ageGroup: ageGroup,
-        results: allResults.map((item) => item.toJson()).toList(),
+        results: _allItems.map((item) => item.toJson()).toList(),
         prescriptionBytes: prescriptionBytes,
         prescriptionFileName: prescriptionFileName,
+        prescriptionData: prescriptionDataToSave,
         customScreeningDate: selectedScreeningDate,
         existingScreeningID: widget.existingScreening?.id,
       );
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            widget.existingScreening != null
-                ? 'Screening updated successfully.'
-                : 'Screening saved successfully.',
-          ),
-        ),
+      showTopSnackBar(
+        context,
+        widget.existingScreening != null
+            ? 'Screening updated successfully.'
+            : 'Screening saved successfully.',
       );
 
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+      showTopSnackBar(context, 'Failed to save: $e', isError: true);
     } finally {
       if (mounted) {
         setState(() {
@@ -396,13 +458,8 @@ class _ScreeningPageState extends State<ScreeningPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F2FA),
 
-      appBar: AppBar(
-        title: Text(
-          widget.existingScreening != null ? 'Edit Screening' : 'New Screening',
-          style: const TextStyle(fontWeight: FontWeight.w800),
-        ),
-        centerTitle: true,
-
+      appBar: SleekAppBar(
+        title: widget.existingScreening != null ? 'Edit Screening' : 'New Screening',
         actions: [
           if (_activeFlagCount > 0)
             Padding(
@@ -574,7 +631,10 @@ class _ScreeningPageState extends State<ScreeningPage> {
 
                       // AGE-BASED ITEMS
                       for (final item in ageBandItems)
-                        ScreeningCard(item: item),
+                        ScreeningCard(
+                          item: item,
+                          onChanged: _onItemChanged,
+                        ),
 
                       // UNIVERSAL RED FLAGS
                       if (universalItems.isNotEmpty) ...[
@@ -595,7 +655,10 @@ class _ScreeningPageState extends State<ScreeningPage> {
                           child: Column(
                             children: [
                               ...universalItems.map(
-                                (item) => ScreeningCard(item: item),
+                                (item) => ScreeningCard(
+                                  item: item,
+                                  onChanged: _onItemChanged,
+                                ),
                               ),
                             ],
                           ),
@@ -604,39 +667,252 @@ class _ScreeningPageState extends State<ScreeningPage> {
 
                       const SizedBox(height: 22),
 
-                      // PRESCRIPTION UPLOAD
+                      // PRESCRIPTION SECTION (UPLOAD VS DIGITAL TEMPLATE)
                       AppCard(
-                        padding: const EdgeInsets.all(16),
-
-                        child: Row(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              Icons.upload_file_rounded,
-                              color: AppColors.primary,
+                            const Row(
+                              children: [
+                                Icon(
+                                  Icons.receipt_long_rounded,
+                                  color: AppColors.primary,
+                                ),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'Prescription Options',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
 
-                            const SizedBox(width: 12),
+                            const SizedBox(height: 14),
 
-                            Expanded(
-                              child: Text(
-                                prescriptionFileName ??
-                                    'No prescription attached',
-
-                                style: const TextStyle(
-                                  color: AppColors.mutedText,
-                                ),
-
-                                overflow: TextOverflow.ellipsis,
+                            // Segmented Mode Toggle
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: ChoiceChip(
+                                      label: const Center(
+                                        child: Text(
+                                          '1. Upload File',
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                        ),
+                                      ),
+                                      selected: prescriptionMode == 'upload',
+                                      selectedColor: Colors.deepPurple.shade100,
+                                      onSelected: (selected) {
+                                        if (selected) {
+                                          setState(() {
+                                            prescriptionMode = 'upload';
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: ChoiceChip(
+                                      label: const Center(
+                                        child: Text(
+                                          '2. Type Digital Template',
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                        ),
+                                      ),
+                                      selected: prescriptionMode == 'template',
+                                      selectedColor: Colors.deepPurple.shade100,
+                                      onSelected: (selected) {
+                                        if (selected) {
+                                          setState(() {
+                                            prescriptionMode = 'template';
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
 
-                            TextButton.icon(
-                              onPressed: _pickPrescription,
+                            const SizedBox(height: 16),
 
-                              icon: const Icon(Icons.attach_file),
+                            if (prescriptionMode == 'upload') ...[
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.upload_file_rounded,
+                                    color: Colors.deepPurple.shade400,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      prescriptionFileName ?? 'No prescription file attached',
+                                      style: const TextStyle(
+                                        color: AppColors.mutedText,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: _pickPrescription,
+                                    icon: const Icon(Icons.attach_file),
+                                    label: const Text('Upload File'),
+                                  ),
+                                  if (prescriptionBytes != null)
+                                    IconButton(
+                                      icon: const Icon(Icons.close, color: Colors.red),
+                                      tooltip: 'Remove attached file',
+                                      onPressed: () {
+                                        setState(() {
+                                          prescriptionBytes = null;
+                                          prescriptionFileName = null;
+                                        });
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ] else ...[
+                              const Text(
+                                'Select Pre-determined Template:',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                              ),
+                              const SizedBox(height: 8),
+                              DropdownButtonFormField<PrescriptionTemplate>(
+                                value: selectedPrescriptionTemplate,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  prefixIcon: Icon(Icons.description_outlined),
+                                  hintText: 'Choose a pre-determined template...',
+                                ),
+                                items: prescriptionTemplates.map((tmpl) {
+                                  return DropdownMenuItem<PrescriptionTemplate>(
+                                    value: tmpl,
+                                    child: Text(tmpl.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                  );
+                                }).toList(),
+                                onChanged: (tmpl) {
+                                  setState(() {
+                                    selectedPrescriptionTemplate = tmpl;
+                                  });
+                                },
+                              ),
 
-                              label: const Text('Upload Prescription'),
-                            ),
+                              if (customDigitalPrescription != null) ...[
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.green.shade300),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              'Custom Digital Prescription Attached',
+                                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green.shade900),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.close, color: Colors.red, size: 18),
+                                            onPressed: () {
+                                              setState(() {
+                                                customDigitalPrescription = null;
+                                              });
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                      if (customDigitalPrescription!['diagnosis'] != null && customDigitalPrescription!['diagnosis'].toString().isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Diagnosis: ${customDigitalPrescription!['diagnosis']}',
+                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+                                        ),
+                                      ],
+                                      if (customDigitalPrescription!['medicines'] is List) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Medicines (${(customDigitalPrescription!['medicines'] as List).length}): ${(customDigitalPrescription!['medicines'] as List).map((m) => m['medicine']).join(', ')}',
+                                          style: TextStyle(color: Colors.grey.shade800, fontSize: 12),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ] else if (selectedPrescriptionTemplate != null) ...[
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.deepPurple.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.deepPurple.shade200),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Diagnosis: ${selectedPrescriptionTemplate!.diagnosis}',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Medicines (${selectedPrescriptionTemplate!.medicines.length}): ${selectedPrescriptionTemplate!.medicines.map((m) => m['medicine']).join(', ')}',
+                                        style: TextStyle(color: Colors.grey.shade800, fontSize: 12.5),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+
+                              const SizedBox(height: 14),
+
+                              OutlinedButton.icon(
+                                onPressed: () async {
+                                  final result = await Navigator.push<Map<String, dynamic>>(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => DigitalPrescriptionPage(
+                                        childID: widget.childID,
+                                      ),
+                                    ),
+                                  );
+
+                                  if (result != null) {
+                                    setState(() {
+                                      prescriptionMode = 'template';
+                                      customDigitalPrescription = result;
+                                    });
+                                  }
+                                },
+                                icon: const Icon(Icons.edit_note_rounded),
+                                label: Text(
+                                  customDigitalPrescription != null
+                                      ? 'Edit Custom Digital Prescription'
+                                      : 'Open Digital Prescription Editor',
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),

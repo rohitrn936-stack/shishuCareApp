@@ -11,7 +11,11 @@ class GrowthDataPoint {
   final double heightCm;
   final String label;
   final String dateStr;
+  final DateTime? date;
+  final bool hasWeightRecorded;
+  final bool hasHeightRecorded;
   final bool isRecorded;
+  final GrowthDataPoint? previousPoint;
 
   GrowthDataPoint({
     required this.months,
@@ -19,7 +23,11 @@ class GrowthDataPoint {
     required this.heightCm,
     required this.label,
     required this.dateStr,
+    this.date,
+    this.hasWeightRecorded = true,
+    this.hasHeightRecorded = true,
     this.isRecorded = true,
+    this.previousPoint,
   });
 }
 
@@ -126,7 +134,7 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
   }
 
   List<GrowthDataPoint> _buildPoints() {
-    List<GrowthDataPoint> list = [];
+    List<GrowthDataPoint> rawList = [];
 
     final ageGroupMonths = <String, double>{
       'Birth (Newborn, Pre-Discharge)': 0.0,
@@ -159,9 +167,10 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
         String ageGroup = data['ageGroup'] ?? 'Screening';
         double m = ageGroupMonths[ageGroup] ?? 0.0;
 
+        DateTime? dt;
         String dateStr = '';
         if (data['screeningDate'] is Timestamp) {
-          final dt = (data['screeningDate'] as Timestamp).toDate();
+          dt = (data['screeningDate'] as Timestamp).toDate();
           dateStr = '${dt.day}/${dt.month}/${dt.year}';
         }
 
@@ -190,54 +199,37 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
           }
         }
 
-        w ??= WhoGrowthStandard.getWeightPercentiles(m)[1];
-        h ??= WhoGrowthStandard.getHeightPercentiles(m)[1];
+        final bool hasWeight = (w != null && w > 0);
+        final bool hasHeight = (h != null && h > 0);
 
-        list.add(GrowthDataPoint(
+        rawList.add(GrowthDataPoint(
           months: m,
-          weightKg: w,
-          heightCm: h,
+          weightKg: w ?? 0.0,
+          heightCm: h ?? 0.0,
           label: ageGroup,
           dateStr: dateStr,
+          date: dt,
+          hasWeightRecorded: hasWeight,
+          hasHeightRecorded: hasHeight,
           isRecorded: true,
         ));
       }
     }
 
-    list.sort((a, b) => a.months.compareTo(b.months));
+    // Sort chronologically by date if available, then by months
+    rawList.sort((a, b) {
+      if (a.date != null && b.date != null) {
+        final cmp = a.date!.compareTo(b.date!);
+        if (cmp != 0) return cmp;
+      }
+      return a.months.compareTo(b.months);
+    });
 
-    // Ensure baseline birth point
-    if (list.isEmpty) {
-      final childYears = (widget.childData['ageYears'] as num?)?.toInt() ?? 0;
-      final childMonths = (widget.childData['ageMonths'] as num?)?.toInt() ?? 0;
-      double childAgeM = (childYears * 12 + childMonths).toDouble();
-      if (childAgeM <= 0) childAgeM = 6.0;
-
+    // Ensure baseline birth point if missing
+    if (rawList.isEmpty || rawList.first.months > 0) {
       final bW = WhoGrowthStandard.getWeightPercentiles(0)[1];
       final bH = WhoGrowthStandard.getHeightPercentiles(0)[1];
-      list.add(GrowthDataPoint(
-        months: 0.0,
-        weightKg: bW,
-        heightCm: bH,
-        label: 'At Birth (Standard)',
-        dateStr: 'Baseline',
-        isRecorded: false,
-      ));
-
-      final cW = WhoGrowthStandard.getWeightPercentiles(childAgeM)[1];
-      final cH = WhoGrowthStandard.getHeightPercentiles(childAgeM)[1];
-      list.add(GrowthDataPoint(
-        months: childAgeM,
-        weightKg: cW,
-        heightCm: cH,
-        label: 'Current Milestone',
-        dateStr: 'WHO Standard',
-        isRecorded: false,
-      ));
-    } else if (list.first.months > 0) {
-      final bW = WhoGrowthStandard.getWeightPercentiles(0)[1];
-      final bH = WhoGrowthStandard.getHeightPercentiles(0)[1];
-      list.insert(
+      rawList.insert(
         0,
         GrowthDataPoint(
           months: 0.0,
@@ -245,12 +237,66 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
           heightCm: bH,
           label: 'At Birth (Standard)',
           dateStr: 'Baseline',
+          hasWeightRecorded: false,
+          hasHeightRecorded: false,
           isRecorded: false,
         ),
       );
     }
 
-    return list;
+    // Process list to fill missing unrecorded values from previous points and link previousPoint
+    List<GrowthDataPoint> processedList = [];
+    GrowthDataPoint? lastRecordedWeightPoint;
+    GrowthDataPoint? lastRecordedHeightPoint;
+
+    for (int i = 0; i < rawList.length; i++) {
+      final current = rawList[i];
+
+      double w = current.weightKg;
+      if (!current.hasWeightRecorded) {
+        if (lastRecordedWeightPoint != null) {
+          w = lastRecordedWeightPoint.weightKg;
+        } else {
+          w = WhoGrowthStandard.getWeightPercentiles(current.months)[1];
+        }
+      }
+
+      double h = current.heightCm;
+      if (!current.hasHeightRecorded) {
+        if (lastRecordedHeightPoint != null) {
+          h = lastRecordedHeightPoint.heightCm;
+        } else {
+          h = WhoGrowthStandard.getHeightPercentiles(current.months)[1];
+        }
+      }
+
+      // Link previous point for comparison (most recent preceding point)
+      GrowthDataPoint? prevPt = processedList.isNotEmpty ? processedList.last : null;
+
+      final updatedPt = GrowthDataPoint(
+        months: current.months,
+        weightKg: w,
+        heightCm: h,
+        label: current.label,
+        dateStr: current.dateStr,
+        date: current.date,
+        hasWeightRecorded: current.hasWeightRecorded,
+        hasHeightRecorded: current.hasHeightRecorded,
+        isRecorded: current.isRecorded,
+        previousPoint: prevPt,
+      );
+
+      if (current.hasWeightRecorded) {
+        lastRecordedWeightPoint = updatedPt;
+      }
+      if (current.hasHeightRecorded) {
+        lastRecordedHeightPoint = updatedPt;
+      }
+
+      processedList.add(updatedPt);
+    }
+
+    return processedList;
   }
 
   @override
@@ -366,10 +412,10 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
             builder: (context, constraints) {
               return MouseRegion(
                 cursor: SystemMouseCursors.click,
-                onHover: (event) => _handleHoverOrTap(event.localPosition, constraints.maxWidth),
+                onHover: (event) => _handleHoverOrTap(event.localPosition, constraints.maxWidth, constraints.maxHeight),
                 child: GestureDetector(
-                  onTapDown: (details) => _handleHoverOrTap(details.localPosition, constraints.maxWidth),
-                  onPanUpdate: (details) => _handleHoverOrTap(details.localPosition, constraints.maxWidth),
+                  onTapDown: (details) => _handleHoverOrTap(details.localPosition, constraints.maxWidth, constraints.maxHeight),
+                  onPanUpdate: (details) => _handleHoverOrTap(details.localPosition, constraints.maxWidth, constraints.maxHeight),
                   child: CustomPaint(
                     size: Size(constraints.maxWidth, constraints.maxHeight),
                     painter: GrowthChartPainter(
@@ -387,6 +433,11 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
 
         const SizedBox(height: 12),
 
+        // Interactive Visit Selector Chips
+        _buildVisitChips(),
+
+        const SizedBox(height: 10),
+
         // Selected Point Info Card
         if (_selectedIndex != null && _selectedIndex! < _points.length)
           _buildPointDetailCard(_points[_selectedIndex!]),
@@ -394,21 +445,125 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
     );
   }
 
-  void _handleHoverOrTap(Offset localPosition, double width) {
+  Widget _buildVisitChips() {
+    if (_points.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Recorded Visits (Tap to select point):',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: AppColors.mutedText,
+          ),
+        ),
+        const SizedBox(height: 6),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: List.generate(_points.length, (index) {
+              final pt = _points[index];
+              final isSelected = _selectedIndex == index;
+              final isRecorded = pt.isRecorded;
+
+              String displayLabel = pt.label;
+              if (pt.dateStr.isNotEmpty) {
+                displayLabel = pt.dateStr == 'Baseline'
+                    ? '${pt.label} (Baseline)'
+                    : '${pt.label} (${pt.dateStr})';
+              }
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedIndex = index;
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(20),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.primary
+                          : (isRecorded ? AppColors.primary.withOpacity(0.08) : Colors.grey.shade100),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.primary
+                            : (isRecorded ? AppColors.primary.withOpacity(0.3) : AppColors.border),
+                        width: isSelected ? 1.5 : 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (index == _points.length - 1 && isRecorded) ...[
+                          const Icon(Icons.stars_rounded, size: 12, color: Colors.amber),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(
+                          displayLabel,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                            color: isSelected
+                                ? Colors.white
+                                : (isRecorded ? AppColors.primary : AppColors.mutedText),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _handleHoverOrTap(Offset localPosition, double width, double height) {
     final double leftMargin = 48.0;
     final double rightMargin = 16.0;
-    final double chartW = width - leftMargin - rightMargin;
+    final double topMargin = 22.0;
+    final double bottomMargin = 28.0;
 
-    if (chartW <= 0 || _points.isEmpty) return;
+    final double chartW = width - leftMargin - rightMargin;
+    final double chartH = height - topMargin - bottomMargin;
+
+    if (chartW <= 0 || chartH <= 0 || _points.isEmpty) return;
+
+    final bool isWeight = _activeMetric == ChartMetric.weight;
+    final double minY = isWeight ? 0.0 : 30.0;
+
+    double maxValInPoints = 0.0;
+    if (_points.isNotEmpty) {
+      maxValInPoints = _points
+          .map((p) => isWeight ? p.weightKg : p.heightCm)
+          .reduce(max);
+    }
+    final double defaultMaxY = isWeight ? 22.0 : 120.0;
+    final double maxY = max(defaultMaxY, maxValInPoints * 1.15);
 
     double dx(double m) => leftMargin + (m / _maxMonths) * chartW;
+    double dy(double v) =>
+        topMargin + chartH - ((v - minY) / (maxY - minY)) * chartH;
 
     int nearestIdx = -1;
     double minDistance = double.infinity;
 
     for (int i = 0; i < _points.length; i++) {
-      double px = dx(_points[i].months);
-      double dist = (localPosition.dx - px).abs();
+      final val = isWeight ? _points[i].weightKg : _points[i].heightCm;
+      final px = dx(_points[i].months);
+      final py = dy(val);
+
+      final dist = sqrt(pow(localPosition.dx - px, 2) + pow(localPosition.dy - py, 2));
       if (dist < minDistance && dist < 45.0) {
         minDistance = dist;
         nearestIdx = i;
@@ -504,14 +659,16 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
 
   Widget _buildPointDetailCard(GrowthDataPoint pt) {
     final isWeight = _activeMetric == ChartMetric.weight;
+    final double currentVal = isWeight ? pt.weightKg : pt.heightCm;
+    final bool hasRecorded = isWeight ? pt.hasWeightRecorded : pt.hasHeightRecorded;
+
     final valStr = isWeight
-        ? '${pt.weightKg.toStringAsFixed(1)} kg'
-        : '${pt.heightCm.toStringAsFixed(0)} cm';
+        ? '${currentVal.toStringAsFixed(1)} kg'
+        : '${currentVal.toStringAsFixed(0)} cm';
     final whoRef = isWeight
         ? WhoGrowthStandard.getWeightPercentiles(pt.months)
         : WhoGrowthStandard.getHeightPercentiles(pt.months);
 
-    final double currentVal = isWeight ? pt.weightKg : pt.heightCm;
     final double p50 = whoRef[1];
 
     String status = 'Normal Band (50th percentile WHO Standard)';
@@ -524,74 +681,145 @@ class _GrowthChartWidgetState extends State<GrowthChartWidget> {
       statusColor = AppColors.warning;
     }
 
+    final prevPt = pt.previousPoint;
+    double? prevVal;
+    double? diff;
+    if (prevPt != null) {
+      prevVal = isWeight ? prevPt.weightKg : prevPt.heightCm;
+      diff = currentVal - prevVal;
+    }
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: AppColors.background,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              isWeight ? Icons.scale_rounded : Icons.straighten_rounded,
-              color: AppColors.primary,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '${pt.label}${pt.dateStr.isNotEmpty ? ' • ${pt.dateStr}' : ''}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: AppColors.text,
-                      ),
-                    ),
-                    Text(
-                      valStr,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.12),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: 3),
-                Row(
+                child: Icon(
+                  isWeight ? Icons.scale_rounded : Icons.straighten_rounded,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.check_circle_outline_rounded,
-                        size: 13, color: statusColor),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        '$status (WHO Ref Median: ${p50.toStringAsFixed(1)}${isWeight ? "kg" : "cm"})',
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${pt.label}${pt.dateStr.isNotEmpty ? ' • ${pt.dateStr}' : ''}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: AppColors.text,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          valStr,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (!hasRecorded && pt.isRecorded) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '(${isWeight ? "Weight" : "Height"} not recorded in this visit; showing carried value)',
                         style: TextStyle(
                           fontSize: 11,
-                          color: statusColor,
-                          fontWeight: FontWeight.w600,
+                          fontStyle: FontStyle.italic,
+                          color: Colors.orange.shade800,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
+                    ],
                   ],
                 ),
-              ],
+              ),
+            ],
+          ),
+
+          // COMPARISON WITH OLD / PREVIOUS VISIT
+          if (prevPt != null && prevVal != null && diff != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    diff >= 0 ? Icons.trending_up_rounded : Icons.trending_down_rounded,
+                    size: 16,
+                    color: diff >= 0 ? AppColors.success : AppColors.danger,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Old Visit (${prevPt.label}${prevPt.dateStr.isNotEmpty ? ' • ${prevPt.dateStr}' : ''}): ${prevVal.toStringAsFixed(isWeight ? 1 : 0)} ${isWeight ? "kg" : "cm"}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: (diff >= 0 ? AppColors.success : AppColors.danger).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${diff >= 0 ? "+" : ""}${diff.toStringAsFixed(isWeight ? 1 : 0)} ${isWeight ? "kg" : "cm"}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: diff >= 0 ? AppColors.success : AppColors.danger,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
+          ],
+
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.check_circle_outline_rounded, size: 13, color: statusColor),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  '$status (WHO Median: ${p50.toStringAsFixed(1)}${isWeight ? "kg" : "cm"})',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: statusColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -805,6 +1033,15 @@ class GrowthChartPainter extends CustomPainter {
         ..style = PaintingStyle.stroke;
       canvas.drawPath(childPath, childLinePaint);
 
+      // Find latest recorded visit index
+      int latestRecordedIndex = -1;
+      for (int i = points.length - 1; i >= 0; i--) {
+        if (points[i].isRecorded) {
+          latestRecordedIndex = i;
+          break;
+        }
+      }
+
       // Draw Points
       for (int i = 0; i < points.length; i++) {
         double val = isWeight ? points[i].weightKg : points[i].heightCm;
@@ -812,6 +1049,7 @@ class GrowthChartPainter extends CustomPainter {
         double y = dy(val);
 
         bool isSelected = selectedIndex == i;
+        bool isLatestRecorded = (i == latestRecordedIndex);
 
         if (isSelected) {
           final Paint guidePaint = Paint()
@@ -837,9 +1075,51 @@ class GrowthChartPainter extends CustomPainter {
           canvas.drawCircle(
               Offset(x, y), 1.5, Paint()..color = Colors.white);
         }
+
+        // Draw "Recent Visit" badge on top of the latest recorded visit dot
+        if (isLatestRecorded) {
+          final TextSpan recentSpan = const TextSpan(
+            text: 'Recent Visit',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 8.5,
+              fontWeight: FontWeight.bold,
+            ),
+          );
+
+          final TextPainter recentTp = TextPainter(
+            text: recentSpan,
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.ltr,
+          )..layout();
+
+          final double badgeW = recentTp.width + 10.0;
+          final double badgeH = recentTp.height + 4.0;
+          final double badgeX = (x - badgeW / 2).clamp(leftMargin, size.width - rightMargin - badgeW);
+          final double badgeY = (y - badgeH - 12.0).clamp(topMargin, size.height - bottomMargin);
+
+          // Draw pill background
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(badgeX, badgeY, badgeW, badgeH),
+              const Radius.circular(10.0),
+            ),
+            Paint()..color = AppColors.primary,
+          );
+
+          // Draw small downward triangle pointing to dot
+          final Path triPath = Path();
+          triPath.moveTo(x - 3, badgeY + badgeH);
+          triPath.lineTo(x + 3, badgeY + badgeH);
+          triPath.lineTo(x, badgeY + badgeH + 3.5);
+          triPath.close();
+          canvas.drawPath(triPath, Paint()..color = AppColors.primary);
+
+          recentTp.paint(canvas, Offset(badgeX + 5.0, badgeY + 2.0));
+        }
       }
 
-      // Draw Interactive Hover Floating Tooltip
+      // Draw Interactive Hover Floating Tooltip (Compact Basic Info)
       if (selectedIndex != null &&
           selectedIndex! >= 0 &&
           selectedIndex! < points.length) {
@@ -853,9 +1133,19 @@ class GrowthChartPainter extends CustomPainter {
             : '${pt.heightCm.toStringAsFixed(0)} cm';
         final titleText =
             pt.dateStr.isNotEmpty ? '${pt.label} (${pt.dateStr})' : pt.label;
+        final bool isLatest = (selectedIndex == latestRecordedIndex);
 
         final TextSpan span = TextSpan(
           children: [
+            if (isLatest)
+              const TextSpan(
+                text: 'Recent Visit\n',
+                style: TextStyle(
+                  color: Color(0xFFFFD54F),
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             TextSpan(
               text: '$titleText\n',
               style: const TextStyle(
@@ -868,7 +1158,7 @@ class GrowthChartPainter extends CustomPainter {
               text: valStr,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 12,
+                fontSize: 12.5,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -888,7 +1178,7 @@ class GrowthChartPainter extends CustomPainter {
         tooltipX =
             tooltipX.clamp(leftMargin, size.width - rightMargin - tooltipW);
 
-        double tooltipY = y - tooltipH - 10.0;
+        double tooltipY = y - tooltipH - 12.0;
         if (tooltipY < topMargin) {
           tooltipY = y + 12.0;
         }

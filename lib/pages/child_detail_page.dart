@@ -6,10 +6,13 @@ import 'package:web_page/pages/screening_history_page.dart';
 import 'package:web_page/pages/screening_page.dart';
 import 'package:web_page/pages/screening_report_page.dart';
 import 'package:web_page/services/firestore_service.dart';
+import 'package:web_page/services/notification_service.dart';
 import 'package:web_page/services/screening_service.dart';
+import 'package:web_page/utils/snackbar_helper.dart';
 import 'package:web_page/utils/visit_numbering.dart';
 import 'package:web_page/widgets/app_card.dart';
 import 'package:web_page/widgets/growth_chart.dart';
+import 'package:web_page/widgets/sleek_app_bar.dart';
 
 class ChildDetailPage extends StatefulWidget {
   final String childID;
@@ -67,16 +70,13 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Child Dashboard',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
+      appBar: SleekAppBar(
+        title: 'Child Dashboard',
         actions: [
           IconButton(
             tooltip: 'Refresh',
             onPressed: _refresh,
-            icon: const Icon(Icons.refresh_rounded),
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
           ),
           const SizedBox(width: 8),
         ],
@@ -192,9 +192,9 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
                                     value: data['phone'],
                                   ),
                                   _InfoTile(
-                                    icon: Icons.location_on_outlined,
-                                    label: 'Village / area',
-                                    value: data['village'],
+                                    icon: Icons.home_outlined,
+                                    label: 'Address',
+                                    value: data['address'] ?? data['village'],
                                   ),
                                 ];
 
@@ -235,7 +235,7 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
                       const SizedBox(height: 18),
 
                       // 4. VACCINATIONS DROPDOWN ACCORDION
-                      _vaccinationsSection(),
+                      _vaccinationsSection(data),
 
                       const SizedBox(height: 18),
 
@@ -420,9 +420,9 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
     );
   }
 
-  Widget _vaccinationsSection() {
+  Widget _vaccinationsSection(Map<String, dynamic> childData) {
     if (_vaccinationMap != null) {
-      return _buildVaccinationsCard(_vaccinationMap!);
+      return _buildVaccinationsCard(childData, _vaccinationMap!);
     }
 
     return FutureBuilder<DocumentSnapshot>(
@@ -438,12 +438,12 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
         final statusMap = (snapshot.data?.data() as Map<String, dynamic>?) ?? {};
         _vaccinationMap = Map<String, dynamic>.from(statusMap);
 
-        return _buildVaccinationsCard(_vaccinationMap!);
+        return _buildVaccinationsCard(childData, _vaccinationMap!);
       },
     );
   }
 
-  Widget _buildVaccinationsCard(Map<String, dynamic> statusMap) {
+  Widget _buildVaccinationsCard(Map<String, dynamic> childData, Map<String, dynamic> statusMap) {
     int completed = 0;
     for (final v in vaccineList) {
       if (statusMap[v['id']]?['completed'] == true) completed++;
@@ -467,13 +467,35 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              alignment: WrapAlignment.spaceBetween,
               children: [
-                _vacFilterTab('All', vaccineList.length),
-                const SizedBox(width: 8),
-                _vacFilterTab('Pending', pending, color: AppColors.danger),
-                const SizedBox(width: 8),
-                _vacFilterTab('Completed', completed, color: AppColors.success),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _vacFilterTab('All', vaccineList.length),
+                    const SizedBox(width: 8),
+                    _vacFilterTab('Pending', pending, color: AppColors.danger),
+                    const SizedBox(width: 8),
+                    _vacFilterTab('Completed', completed, color: AppColors.success),
+                  ],
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0288D1),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () => _showNotificationDialog(context, childData, statusMap),
+                  icon: const Icon(Icons.notifications_active_rounded, size: 16),
+                  label: const Text('Notify Parent', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
               ],
             ),
           ),
@@ -559,6 +581,357 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
           ),
         ),
       ),
+    );
+  }
+
+  void _showNotificationDialog(
+    BuildContext context,
+    Map<String, dynamic> childData,
+    Map<String, dynamic> statusMap,
+  ) {
+    final childName = childData['childName']?.toString() ?? 'Child';
+    final guardianName = childData['guardianName']?.toString() ?? 'Parent';
+    final phone = childData['phone']?.toString() ?? '';
+
+    final List<Map<String, dynamic>> selectableVaccines = vaccineList.map((v) {
+      final isDone = statusMap[v['id']]?['completed'] == true;
+      return {
+        'id': v['id'],
+        'name': v['name'],
+        'age': v['age'],
+        'selected': !isDone,
+      };
+    }).toList();
+
+    final customVacController = TextEditingController();
+    final customAgeController = TextEditingController();
+    bool isAddingCustom = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final selectedList = selectableVaccines
+                .where((v) => v['selected'] == true)
+                .map((v) => {'name': v['name']!.toString(), 'age': v['age']!.toString()})
+                .toList();
+
+            final message = NotificationService.generateReminderMessage(
+              childName: childName,
+              guardianName: guardianName,
+              dueVaccines: selectedList,
+            );
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.notifications_active_rounded,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Send Vaccine Reminder',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.text,
+                                  ),
+                                ),
+                                Text(
+                                  'Recipient: $guardianName ($phone)',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: AppColors.mutedText,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+
+                      // SELECT VACCINES HEADER + ADD CUSTOM VACCINE BUTTON
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Select Vaccines to Include (${selectedList.length}):',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: AppColors.text,
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: () {
+                              setModalState(() {
+                                isAddingCustom = !isAddingCustom;
+                              });
+                            },
+                            icon: Icon(
+                              isAddingCustom ? Icons.close_rounded : Icons.add_rounded,
+                              size: 16,
+                            ),
+                            label: Text(
+                              isAddingCustom ? 'Cancel' : 'Add Custom Vaccine',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // CUSTOM VACCINE INPUT FORM
+                      if (isAddingCustom) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: customVacController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Vaccine Name',
+                                        hintText: 'e.g. Flu Shot / Influenza',
+                                        isDense: true,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: customAgeController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Due Age',
+                                        hintText: 'e.g. 6 Months',
+                                        isDense: true,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  ),
+                                  onPressed: () {
+                                    final name = customVacController.text.trim();
+                                    final age = customAgeController.text.trim();
+                                    if (name.isNotEmpty) {
+                                      setModalState(() {
+                                        selectableVaccines.add({
+                                          'id': 'custom_${DateTime.now().millisecondsSinceEpoch}',
+                                          'name': name,
+                                          'age': age.isEmpty ? 'Custom' : age,
+                                          'selected': true,
+                                        });
+                                        customVacController.clear();
+                                        customAgeController.clear();
+                                        isAddingCustom = false;
+                                      });
+                                    }
+                                  },
+                                  icon: const Icon(Icons.check_rounded, size: 16),
+                                  label: const Text('Add to List', style: TextStyle(fontSize: 12)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
+                      // VACCINE SELECTION CHIPS
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: selectableVaccines.map((v) {
+                          final isSelected = v['selected'] == true;
+                          return FilterChip(
+                            selected: isSelected,
+                            showCheckmark: true,
+                            label: Text(
+                              '${v['name']} (${v['age']})',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: isSelected ? Colors.white : AppColors.text,
+                              ),
+                            ),
+                            selectedColor: AppColors.primary,
+                            backgroundColor: AppColors.background,
+                            onSelected: (val) {
+                              setModalState(() {
+                                v['selected'] = val;
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Notification Message Preview:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: AppColors.text,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Text(
+                          selectedList.isEmpty
+                              ? 'No vaccines selected. Please select at least one vaccine above.'
+                              : message,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1.4,
+                            color: AppColors.text,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0288D1),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: selectedList.isEmpty
+                                  ? null
+                                  : () async {
+                                      Navigator.pop(ctx);
+                                      final ok = await NotificationService.sendSmsReminder(
+                                        phone: phone,
+                                        message: message,
+                                      );
+                                      if (ok) {
+                                        await NotificationService.logReminderInFirestore(
+                                          childID: widget.childID,
+                                          phone: phone,
+                                          method: 'SMS',
+                                          message: message,
+                                          vaccineNames: selectedList.map((v) => v['name']!).toList(),
+                                        );
+                                        if (context.mounted) {
+                                          showTopSnackBar(context, 'SMS vaccine reminder initiated!');
+                                        }
+                                      } else {
+                                        if (context.mounted) {
+                                          showTopSnackBar(context, 'Could not launch SMS app.', isError: true);
+                                        }
+                                      }
+                                    },
+                              icon: const Icon(Icons.sms_rounded, size: 18),
+                              label: const Text('Send SMS', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF25D366),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: selectedList.isEmpty
+                                  ? null
+                                  : () async {
+                                      Navigator.pop(ctx);
+                                      final ok = await NotificationService.sendWhatsAppReminder(
+                                        phone: phone,
+                                        message: message,
+                                      );
+                                      if (ok) {
+                                        await NotificationService.logReminderInFirestore(
+                                          childID: widget.childID,
+                                          phone: phone,
+                                          method: 'WhatsApp',
+                                          message: message,
+                                          vaccineNames: selectedList.map((v) => v['name']!).toList(),
+                                        );
+                                        if (context.mounted) {
+                                          showTopSnackBar(context, 'WhatsApp vaccine reminder launched!');
+                                        }
+                                      } else {
+                                        if (context.mounted) {
+                                          showTopSnackBar(context, 'Could not launch WhatsApp.', isError: true);
+                                        }
+                                      }
+                                    },
+                              icon: const Icon(Icons.chat_bubble_rounded, size: 18),
+                              label: const Text('WhatsApp', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -668,9 +1041,7 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Screening record deleted successfully.')),
-      );
+      showTopSnackBar(context, 'Screening record deleted successfully.');
       _refresh();
     }
   }
@@ -685,6 +1056,7 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
     final visitInfo = VisitNumberingHelper.getVisitInfo(doc, allDocs);
     final displayTitle = visitInfo['title']!;
     final badgeText = visitInfo['badge']!;
+    final hasPrescription = data['prescriptionUrl'] != null || data['prescriptionData'] != null;
 
     return Material(
       color: AppColors.background,
@@ -716,6 +1088,20 @@ class _ChildDetailPageState extends State<ChildDetailPage> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (hasPrescription) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'Rx',
+                  style: TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
             if (redFlags > 0) ...[
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

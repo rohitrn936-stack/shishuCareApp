@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:web_page/constants/app_colours.dart';
 import 'package:web_page/pages/child_detail_page.dart';
 import 'package:web_page/services/firestore_service.dart';
+import 'package:web_page/utils/snackbar_helper.dart';
 import 'package:web_page/widgets/app_card.dart';
+import 'package:web_page/widgets/sleek_app_bar.dart';
 
 class RegisterChildPage extends StatefulWidget {
   final DocumentSnapshot? existingChild;
@@ -21,7 +23,11 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
   final childNameController = TextEditingController();
   final guardianController = TextEditingController();
   final phoneController = TextEditingController();
-  final villageController = TextEditingController();
+  final houseNoController = TextEditingController();
+  final streetController = TextEditingController();
+  final localityController = TextEditingController();
+  final cityController = TextEditingController();
+  final pincodeController = TextEditingController();
   final dobController = TextEditingController();
 
   DateTime? selectedDate;
@@ -41,7 +47,11 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
       childNameController.text = data['childName']?.toString() ?? '';
       guardianController.text = data['guardianName']?.toString() ?? '';
       phoneController.text = data['phone']?.toString() ?? '';
-      villageController.text = data['village']?.toString() ?? '';
+      houseNoController.text = data['houseNo']?.toString() ?? '';
+      streetController.text = data['street']?.toString() ?? '';
+      localityController.text = data['locality']?.toString() ?? '';
+      cityController.text = data['city']?.toString() ?? '';
+      pincodeController.text = data['pincode']?.toString() ?? '';
       selectedGender = data['gender']?.toString();
       selectedParentType = data['parentType']?.toString() ?? 'Mother';
       if (data['dob'] is Timestamp) {
@@ -67,7 +77,11 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
     childNameController.dispose();
     guardianController.dispose();
     phoneController.dispose();
-    villageController.dispose();
+    houseNoController.dispose();
+    streetController.dispose();
+    localityController.dispose();
+    cityController.dispose();
+    pincodeController.dispose();
     dobController.dispose();
     super.dispose();
   }
@@ -131,6 +145,19 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
 
     setState(() => saving = true);
 
+    final parts = [
+      houseNoController.text.trim(),
+      streetController.text.trim(),
+      localityController.text.trim(),
+      cityController.text.trim(),
+    ].where((p) => p.isNotEmpty).toList();
+
+    final pin = pincodeController.text.trim();
+    String assembledAddress = parts.join(', ');
+    if (pin.isNotEmpty) {
+      assembledAddress += assembledAddress.isNotEmpty ? ' - $pin' : pin;
+    }
+
     try {
       if (widget.existingChild != null) {
         await firestoreService.updateChild(
@@ -139,7 +166,12 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
           parentType: selectedParentType,
           guardianName: guardianController.text.trim(),
           phone: phoneController.text.trim(),
-          village: villageController.text.trim(),
+          houseNo: houseNoController.text.trim(),
+          street: streetController.text.trim(),
+          locality: localityController.text.trim(),
+          city: cityController.text.trim(),
+          pincode: pincodeController.text.trim(),
+          address: assembledAddress,
           gender: selectedGender!,
           dob: selectedDate!,
           ageYears: calculatedYears,
@@ -155,7 +187,12 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
           parentType: selectedParentType,
           guardianName: guardianController.text.trim(),
           phone: phoneController.text.trim(),
-          village: villageController.text.trim(),
+          houseNo: houseNoController.text.trim(),
+          street: streetController.text.trim(),
+          locality: localityController.text.trim(),
+          city: cityController.text.trim(),
+          pincode: pincodeController.text.trim(),
+          address: assembledAddress,
           gender: selectedGender!,
           dob: selectedDate!,
           ageYears: calculatedYears,
@@ -182,20 +219,15 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    showTopSnackBar(context, message);
   }
 
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.existingChild != null;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          isEditing ? 'Edit Child Profile' : 'Register New Child',
-          style: const TextStyle(fontWeight: FontWeight.w800),
-        ),
+      appBar: SleekAppBar(
+        title: isEditing ? 'Edit Child Profile' : 'Register New Child',
       ),
       body: SafeArea(
         child: Center(
@@ -291,34 +323,94 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
                                     : null,
                           ),
                           const SizedBox(height: 16),
+                          _phoneField(),
+                          const SizedBox(height: 24),
+                          const AppSectionTitle(
+                            title: 'Residential Address',
+                            subtitle: 'Enter apartment/house no, street, locality, and city details.',
+                            icon: Icons.location_on_outlined,
+                          ),
+                          const SizedBox(height: 16),
                           LayoutBuilder(
                             builder: (context, constraints) {
-                              if (constraints.maxWidth < 560) {
+                              final isWide = constraints.maxWidth > 560;
+
+                              final houseField = _field(
+                                controller: houseNoController,
+                                label: 'Apartment / House / Flat No.',
+                                hint: 'e.g. #717/1 or Flat 302',
+                                icon: Icons.home_outlined,
+                              );
+
+                              final streetField = _field(
+                                controller: streetController,
+                                label: 'Street / Cross Road',
+                                hint: 'e.g. 16th Main, 6th B Cross',
+                                icon: Icons.add_road_rounded,
+                              );
+
+                              final localityField = _field(
+                                controller: localityController,
+                                label: 'Locality / Area / Block',
+                                hint: 'e.g. Koramangala 3rd Block',
+                                icon: Icons.location_city_outlined,
+                              );
+
+                              final cityField = _field(
+                                controller: cityController,
+                                label: 'City / Town',
+                                hint: 'e.g. Bangalore',
+                                icon: Icons.location_on_outlined,
+                              );
+
+                              final pincodeField = _field(
+                                controller: pincodeController,
+                                label: 'Pincode',
+                                hint: 'e.g. 560034',
+                                icon: Icons.pin_drop_outlined,
+                                keyboardType: TextInputType.number,
+                              );
+
+                              if (!isWide) {
                                 return Column(
                                   children: [
-                                    _phoneField(),
+                                    houseField,
                                     const SizedBox(height: 16),
-                                    _field(
-                                      controller: villageController,
-                                      label: 'Village / area',
-                                      hint: 'Enter locality',
-                                      icon: Icons.location_on_outlined,
-                                    ),
+                                    streetField,
+                                    const SizedBox(height: 16),
+                                    localityField,
+                                    const SizedBox(height: 16),
+                                    cityField,
+                                    const SizedBox(height: 16),
+                                    pincodeField,
                                   ],
                                 );
                               }
 
-                              return Row(
+                              return Column(
                                 children: [
-                                  Expanded(child: _phoneField()),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: _field(
-                                      controller: villageController,
-                                      label: 'Village / area',
-                                      hint: 'Enter locality',
-                                      icon: Icons.location_on_outlined,
-                                    ),
+                                  Row(
+                                    children: [
+                                      Expanded(child: houseField),
+                                      const SizedBox(width: 16),
+                                      Expanded(child: streetField),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    children: [
+                                      Expanded(child: localityField),
+                                      const SizedBox(width: 16),
+                                      Expanded(child: cityField),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    children: [
+                                      Expanded(child: pincodeField),
+                                      const SizedBox(width: 16),
+                                      const Expanded(child: SizedBox()),
+                                    ],
                                   ),
                                 ],
                               );
@@ -439,10 +531,12 @@ class _RegisterChildPageState extends State<RegisterChildPage> {
     required String label,
     required String hint,
     required IconData icon,
+    TextInputType? keyboardType,
     String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
+      keyboardType: keyboardType,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,

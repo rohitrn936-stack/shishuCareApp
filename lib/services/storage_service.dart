@@ -20,4 +20,27 @@ class StorageService {
     final uploadTask = await ref.putData(fileBytes);
     return await uploadTask.ref.getDownloadURL();
   }
+
+  Future<void> deletePrescriptionFile({
+    required String childID,
+    required String screeningID,
+    required String fileName,
+  }) async {
+    try {
+      final ref = _storage
+          .ref()
+          .child("prescriptions")
+          .child(childID)
+          .child(screeningID)
+          .child(fileName);
+      await ref.delete();
+    } catch (_) {}
+  }
+
+  Future<void> deletePrescriptionByUrl(String url) async {
+    try {
+      final ref = _storage.refFromURL(url);
+      await ref.delete();
+    } catch (_) {}
+  }
 }

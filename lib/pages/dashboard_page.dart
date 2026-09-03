@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:web_page/pages/child_detail_page.dart';
 import 'package:web_page/services/dashboard_service.dart';
+import 'package:web_page/widgets/sleek_app_bar.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -28,12 +29,16 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F2FA),
-      appBar: AppBar(
-        title: const Text("Doctor Dashboard"),
-        centerTitle: true,
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
-        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _refresh)],
+      appBar: SleekAppBar(
+        title: "Doctor Dashboard",
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+            onPressed: _refresh,
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: FutureBuilder<DashboardStats>(
         future: _statsFuture,
@@ -50,7 +55,7 @@ class _DashboardPageState extends State<DashboardPage> {
             final q = _search.toLowerCase();
             return p.childName.toLowerCase().contains(q) ||
                 p.childID.toLowerCase().contains(q) ||
-                p.village.toLowerCase().contains(q);
+                p.address.toLowerCase().contains(q);
           }).toList();
 
           return RefreshIndicator(
@@ -211,7 +216,7 @@ class _DashboardPageState extends State<DashboardPage> {
               columns: const [
                 DataColumn(label: Text("Child ID")),
                 DataColumn(label: Text("Name")),
-                DataColumn(label: Text("Village")),
+                DataColumn(label: Text("Address")),
                 DataColumn(label: Text("Screenings")),
                 DataColumn(label: Text("Last Visit")),
                 DataColumn(label: Text("Status")),
@@ -222,7 +227,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 return DataRow(cells: [
                   DataCell(Text(p.childID)),
                   DataCell(Text(p.childName)),
-                  DataCell(Text(p.village)),
+                  DataCell(Text(p.address)),
                   DataCell(Text(p.totalScreenings.toString())),
                   DataCell(Text(p.lastScreeningDate == null
                       ? "-"

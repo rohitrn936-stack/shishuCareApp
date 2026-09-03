@@ -74,6 +74,54 @@ class _ScreeningCardState extends State<ScreeningCard> {
     final unit = item.unit;
     final titleLower = item.title.toLowerCase();
 
+    // 0. Temperature Dropdown
+    if (titleLower.contains('temperature') || titleLower.contains('temp') || titleLower.contains('38c')) {
+      final options = [
+        'Normal (< 37.5°C)',
+        '37.5°C - 37.9°C (Low-grade)',
+        '38.0°C - 38.9°C (Fever)',
+        '39.0°C - 39.9°C (High Fever)',
+        '≥ 40.0°C (Very High Fever)',
+        'Hypothermia (< 35.5°C)',
+      ];
+
+      final currentVal = item.value;
+
+      return DropdownButtonFormField<String>(
+        value: options.contains(currentVal) ? currentVal : null,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: 'Temperature',
+          isDense: true,
+          prefixIcon: Icon(Icons.thermostat_rounded, size: 18),
+          border: OutlineInputBorder(),
+        ),
+        hint: const Text('Select Temp', style: TextStyle(fontSize: 12.5)),
+        items: options.map((opt) {
+          return DropdownMenuItem<String>(
+            value: opt,
+            child: Text(
+              opt,
+              style: const TextStyle(fontSize: 12.5),
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }).toList(),
+        onChanged: (val) {
+          setState(() {
+            item.value = val ?? '';
+            if (val != null && val.isNotEmpty) {
+              item.checked = true;
+              if (val.contains('38') || val.contains('39') || val.contains('40') || val.contains('Fever')) {
+                item.redFlag = true;
+              }
+            }
+          });
+          _notifyChanged();
+        },
+      );
+    }
+
     // 1. Clinical Observation Chips (unit == 'Obs')
     if (unit == 'Obs') {
       final val = item.value;
@@ -177,6 +225,10 @@ class _ScreeningCardState extends State<ScreeningCard> {
       label = 'Height / Length (${unit.isEmpty ? 'cm' : unit})';
       hint = 'e.g. 52.0';
       icon = Icons.straighten_rounded;
+    } else if (titleLower.contains('bmi') || unit.contains('kg/m²') || unit.contains('kg/m2')) {
+      label = 'BMI (${unit.isEmpty ? 'kg/m²' : unit})';
+      hint = 'Auto-calculated e.g. 16.5';
+      icon = Icons.calculate_outlined;
     } else if (titleLower.contains('head') || titleLower.contains('circumference')) {
       label = 'Head Circ. (${unit.isEmpty ? 'cm' : unit})';
       hint = 'e.g. 35.0';
@@ -447,11 +499,11 @@ class _ScreeningCardState extends State<ScreeningCard> {
                     ],
 
                     // --------------------------------
-                    // VALUE + NOTES
+                    // VALUE + REMARKS / NOTES
                     // --------------------------------
-                    if (!item.isUniversal) ...[
-                      const SizedBox(height: 12),
+                    const SizedBox(height: 12),
 
+                    if (!item.isUniversal || item.title.toLowerCase().contains('temp') || item.unit.isNotEmpty) ...[
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -480,6 +532,21 @@ class _ScreeningCardState extends State<ScreeningCard> {
                             ),
                           ),
                         ],
+                      ),
+                    ] else ...[
+                      TextField(
+                        controller: _notesController,
+                        decoration: const InputDecoration(
+                          labelText: 'Remarks / Notes (optional)',
+                          hintText: 'Add remarks for this red flag...',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                        maxLines: 1,
+                        onChanged: (value) {
+                          item.notes = value;
+                          _notifyChanged();
+                        },
                       ),
                     ],
                   ],

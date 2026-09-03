@@ -37,9 +37,16 @@ class MyApp extends StatelessWidget {
         appBarTheme: const AppBarTheme(
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
-          elevation: 0,
-          centerTitle: false,
+          elevation: 2,
+          shadowColor: Colors.black26,
+          centerTitle: true,
           surfaceTintColor: Colors.transparent,
+          titleTextStyle: TextStyle(
+            color: Colors.white,
+            fontSize: 19,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.3,
+          ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,

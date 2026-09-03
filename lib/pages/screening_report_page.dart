@@ -1,12 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:web_page/constants/app_colours.dart';
 import 'package:web_page/pages/screening_page.dart';
+import 'package:web_page/services/firestore_service.dart';
 import 'package:web_page/services/pdf_service.dart';
 import 'package:web_page/services/screening_service.dart';
+import 'package:web_page/utils/snackbar_helper.dart';
 import 'package:web_page/utils/visit_numbering.dart';
 import 'package:web_page/widgets/app_card.dart';
+import 'package:web_page/widgets/sleek_app_bar.dart';
 
 class ScreeningReportPage extends StatelessWidget {
   final String childID;
@@ -72,19 +76,14 @@ class ScreeningReportPage extends StatelessWidget {
         );
 
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Screening record deleted successfully.')),
-        );
+        showTopSnackBar(context, 'Screening record deleted successfully.');
         Navigator.pop(context);
       }
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Screening Report',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
+      appBar: SleekAppBar(
+        title: 'Screening Report',
         actions: [
           if (redFlags > 0)
             Padding(
@@ -112,7 +111,7 @@ class ScreeningReportPage extends StatelessWidget {
           IconButton(
             tooltip: 'Export PDF',
             onPressed: () => _exportPdf(context, data, results, date),
-            icon: const Icon(Icons.picture_as_pdf_rounded),
+            icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.white),
           ),
           IconButton(
             tooltip: 'Edit screening',
@@ -125,12 +124,12 @@ class ScreeningReportPage extends StatelessWidget {
                 ),
               ),
             ),
-            icon: const Icon(Icons.edit_outlined, color: AppColors.primary),
+            icon: const Icon(Icons.edit_outlined, color: Colors.white),
           ),
           IconButton(
             tooltip: 'Delete screening',
             onPressed: () => confirmDelete(context),
-            icon: const Icon(Icons.delete_outline_rounded, color: AppColors.danger),
+            icon: const Icon(Icons.delete_outline_rounded, color: Colors.white),
           ),
           const SizedBox(width: 8),
         ],
@@ -146,6 +145,8 @@ class ScreeningReportPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _header(data, date, completed, redFlags, results.length),
+
+                  _prescriptionSection(context, data),
 
                   const SizedBox(height: 20),
 
@@ -278,6 +279,192 @@ class ScreeningReportPage extends StatelessWidget {
     );
   }
 
+  Future<void> _openUrl(String urlStr) async {
+    final uri = Uri.parse(urlStr);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Widget _prescriptionSection(BuildContext context, Map<String, dynamic> data) {
+    final String? prescriptionUrl = data['prescriptionUrl'] as String?;
+    final String? prescriptionFileName = data['prescriptionFileName'] as String?;
+    final Map<String, dynamic>? prescriptionData =
+        data['prescriptionData'] != null ? Map<String, dynamic>.from(data['prescriptionData'] as Map) : null;
+
+    if (prescriptionUrl == null && prescriptionData == null) {
+      return const SizedBox.shrink();
+    }
+
+    final String? diagnosis = prescriptionData?['diagnosis']?.toString();
+    final String? notes = prescriptionData?['notes']?.toString();
+    final List medicines = (prescriptionData?['medicines'] as List?) ?? [];
+    final String? templateName = prescriptionData?['templateName']?.toString();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 22),
+        const Text(
+          'Prescription Details',
+          style: TextStyle(
+            fontSize: 21,
+            fontWeight: FontWeight.w900,
+            color: AppColors.text,
+          ),
+        ),
+        const SizedBox(height: 12),
+        AppCard(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.receipt_long_rounded,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          templateName != null ? 'Prescription ($templateName)' : 'Prescription',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.text,
+                          ),
+                        ),
+                        if (prescriptionFileName != null)
+                          Text(
+                            prescriptionFileName,
+                            style: const TextStyle(color: AppColors.mutedText, fontSize: 13),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (prescriptionUrl != null && prescriptionUrl.isNotEmpty)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => _openUrl(prescriptionUrl),
+                      icon: const Icon(Icons.download_rounded, size: 18),
+                      label: const Text('View File'),
+                    ),
+                ],
+              ),
+              if (diagnosis != null && diagnosis.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Diagnosis',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.text),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    diagnosis,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  ),
+                ),
+              ],
+              if (medicines.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Prescribed Medicines',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.text),
+                ),
+                const SizedBox(height: 8),
+                for (final medRaw in medicines) ...[
+                  if (medRaw is Map) ...[
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.medication_rounded, color: AppColors.primary, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  medRaw['medicine']?.toString() ?? '',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 4,
+                            children: [
+                              if (medRaw['dosage']?.toString().isNotEmpty == true)
+                                Text('Dosage: ${medRaw['dosage']}', style: const TextStyle(fontSize: 13, color: AppColors.mutedText)),
+                              if (medRaw['duration']?.toString().isNotEmpty == true)
+                                Text('Duration: ${medRaw['duration']}', style: const TextStyle(fontSize: 13, color: AppColors.mutedText)),
+                            ],
+                          ),
+                          if (medRaw['instruction']?.toString().isNotEmpty == true) ...[
+                            const SizedBox(height: 4),
+                            Text('Instruction: ${medRaw['instruction']}', style: const TextStyle(fontSize: 12.5, fontStyle: FontStyle.italic)),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+              if (notes != null && notes.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Doctor / Clinical Notes',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.text),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    notes,
+                    style: const TextStyle(fontSize: 13.5, height: 1.4),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<void> _exportPdf(
     BuildContext context,
     Map<String, dynamic> data,
@@ -285,13 +472,24 @@ class ScreeningReportPage extends StatelessWidget {
     DateTime? date,
   ) async {
     try {
+      final childSnap = await FirestoreService().getChild(childID);
+      final childData = childSnap.exists ? (childSnap.data() as Map<String, dynamic>) : null;
+
+      final vacSnap = await FirestoreService().getVaccinations(childID);
+      final vacMap = vacSnap.exists ? (vacSnap.data() as Map<String, dynamic>) : null;
+
       final pdf = await PdfService().generateReport(
         childID: childID,
+        childData: childData,
         ageGroup: data['ageGroup']?.toString() ?? '',
         date: date == null
             ? 'Unavailable'
             : '${date.day}/${date.month}/${date.year}',
         results: results,
+        prescriptionData: data['prescriptionData'] != null ? Map<String, dynamic>.from(data['prescriptionData'] as Map) : null,
+        prescriptionUrl: data['prescriptionUrl'] as String?,
+        prescriptionFileName: data['prescriptionFileName'] as String?,
+        vaccinationData: vacMap,
       );
 
       await Printing.layoutPdf(onLayout: (format) async => pdf.save());
@@ -300,9 +498,7 @@ class ScreeningReportPage extends StatelessWidget {
         return;
       }
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not export PDF: $e')));
+      showTopSnackBar(context, 'Could not export PDF: $e', isError: true);
     }
   }
 }

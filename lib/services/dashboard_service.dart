@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class PatientSummary {
   final String childID;
   final String childName;
-  final String village;
+  final String address;
   final DateTime? lastScreeningDate;
   final int lastRedFlagCount;
   final int totalScreenings;
@@ -11,7 +11,7 @@ class PatientSummary {
   PatientSummary({
     required this.childID,
     required this.childName,
-    required this.village,
+    required this.address,
     required this.lastScreeningDate,
     required this.lastRedFlagCount,
     required this.totalScreenings,
@@ -86,7 +86,7 @@ class DashboardService {
       patients.add(PatientSummary(
         childID: childData["childID"] ?? childDoc.id,
         childName: childData["childName"] ?? "Unknown",
-        village: childData["village"] ?? "-",
+        address: childData["address"] ?? childData["village"] ?? "-",
         lastScreeningDate: lastDate,
         lastRedFlagCount: lastFlags,
         totalScreenings: screeningsSnap.docs.length,
